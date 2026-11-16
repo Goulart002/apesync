@@ -87,4 +87,4 @@ Código em `lib/services/nota_scanner.dart`; testes em `test/nota_scanner_test.d
 - Início → Ver acertos → Acertos (registrar pagamento)
 - Sobre → Sair da conta → Login
 
-Dados ficam no SQLite do celular e no Supabase; ver seção "Banco de dados e sincronização offline".
+Dados ficam no SQLite do celular e no Supabase; ver seção "Banco de dados e sincronização offline"..
