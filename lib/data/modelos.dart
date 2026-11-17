@@ -12,14 +12,28 @@ import '../theme.dart';
 // que são o que permite sincronizar alterações e exclusões feitas offline.
 // =============================================================================
 
-enum Categoria { mercado, contas, moradia, outros }
+/// [ajuste] não é escolhida pelo usuário: o app cria sozinho quando o
+/// administrador remove um morador que estava devendo (a dívida dele é
+/// dividida entre quem fica).
+enum Categoria { mercado, contas, moradia, outros, ajuste }
 
 extension CategoriaInfo on Categoria {
+  /// Categorias que aparecem no "Novo gasto" e nos filtros.
+  static const lancaveis = [
+    Categoria.mercado,
+    Categoria.contas,
+    Categoria.moradia,
+    Categoria.outros,
+  ];
+
+  bool get ehAjuste => this == Categoria.ajuste;
+
   String get label => switch (this) {
         Categoria.mercado => 'Mercado',
         Categoria.contas => 'Contas',
         Categoria.moradia => 'Moradia',
         Categoria.outros => 'Outros',
+        Categoria.ajuste => 'Ajuste',
       };
 
   IconData get icon => switch (this) {
@@ -27,6 +41,7 @@ extension CategoriaInfo on Categoria {
         Categoria.contas => Icons.bolt_outlined,
         Categoria.moradia => Icons.home_outlined,
         Categoria.outros => Icons.category_outlined,
+        Categoria.ajuste => Icons.balance_outlined,
       };
 
   Color get color => switch (this) {
@@ -34,6 +49,7 @@ extension CategoriaInfo on Categoria {
         Categoria.contas => AppColors.blue,
         Categoria.moradia => AppColors.primary,
         Categoria.outros => AppColors.purple,
+        Categoria.ajuste => AppColors.muted,
       };
 
   Color get background => switch (this) {
@@ -41,6 +57,7 @@ extension CategoriaInfo on Categoria {
         Categoria.contas => AppColors.blueLight,
         Categoria.moradia => AppColors.primaryLight,
         Categoria.outros => AppColors.purpleLight,
+        Categoria.ajuste => AppColors.divider,
       };
 
   static Categoria parse(String? s) => Categoria.values
@@ -84,6 +101,9 @@ class Casa {
   final String nome;
   final String codigoConvite;
   final String criadoPor;
+
+  /// usuario_id (conta) de quem administra a casa.
+  final String adminId;
   final String updatedAt;
   final bool deleted;
 
@@ -92,6 +112,7 @@ class Casa {
     required this.nome,
     required this.codigoConvite,
     required this.criadoPor,
+    required this.adminId,
     required this.updatedAt,
     this.deleted = false,
   });
@@ -101,8 +122,20 @@ class Casa {
         nome: m['nome'] as String,
         codigoConvite: m['codigo_convite'] as String,
         criadoPor: m['criado_por'] as String,
+        // Casas antigas (antes do administrador): quem criou é o admin.
+        adminId: (m['admin_id'] as String?) ?? m['criado_por'] as String,
         updatedAt: m['updated_at'] as String,
         deleted: _lerBool(m['deleted']),
+      );
+
+  Casa copia({String? nome, String? codigoConvite}) => Casa(
+        id: id,
+        nome: nome ?? this.nome,
+        codigoConvite: codigoConvite ?? this.codigoConvite,
+        criadoPor: criadoPor,
+        adminId: adminId,
+        updatedAt: updatedAt,
+        deleted: deleted,
       );
 
   Map<String, Object?> toLocal() => {
@@ -110,6 +143,7 @@ class Casa {
         'nome': nome,
         'codigo_convite': codigoConvite,
         'criado_por': criadoPor,
+        'admin_id': adminId,
         'updated_at': updatedAt,
         'deleted': deleted ? 1 : 0,
       };
@@ -137,6 +171,16 @@ class Morador {
   Color get color => paletaMoradores[cor.abs() % paletaMoradores.length];
   String get inicial => nome.isEmpty ? '?' : nome[0].toUpperCase();
   bool get temConta => usuarioId != null;
+
+  Morador copia({String? nome, bool? deleted}) => Morador(
+        id: id,
+        casaId: casaId,
+        nome: nome ?? this.nome,
+        cor: cor,
+        usuarioId: usuarioId,
+        updatedAt: updatedAt,
+        deleted: deleted ?? this.deleted,
+      );
 
   factory Morador.fromMap(Map<String, Object?> m) => Morador(
         id: m['id'] as String,
@@ -335,8 +379,18 @@ int? parseReais(String texto) {
 }
 
 const _meses = [
-  'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
-  'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'
+  'janeiro',
+  'fevereiro',
+  'março',
+  'abril',
+  'maio',
+  'junho',
+  'julho',
+  'agosto',
+  'setembro',
+  'outubro',
+  'novembro',
+  'dezembro'
 ];
 
 String nomeMes(DateTime d) {

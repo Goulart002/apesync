@@ -16,6 +16,7 @@ class LocalDb {
       nome TEXT NOT NULL,
       codigo_convite TEXT NOT NULL,
       criado_por TEXT NOT NULL,
+      admin_id TEXT,
       updated_at TEXT NOT NULL,
       deleted INTEGER NOT NULL DEFAULT 0,
       pendente INTEGER NOT NULL DEFAULT 0)''',
@@ -62,21 +63,53 @@ class LocalDb {
     final caminho = p.join(await getDatabasesPath(), 'apesync_$usuarioId.db');
     return openDatabase(
       caminho,
-      version: 1,
+      version: 2,
       onCreate: (db, _) async {
         for (final sql in _schema) {
           await db.execute(sql);
         }
       },
+      onUpgrade: (db, de, para) async {
+        if (de < 2) {
+          // v2: administrador da casa. Zera a marca do download das casas
+          // para baixar de novo já com o admin_id.
+          await db.execute('ALTER TABLE casas ADD COLUMN admin_id TEXT');
+          await db.delete('meta',
+              where: 'chave LIKE ?', whereArgs: ['pull_casas_%']);
+        }
+      },
     );
+  }
+
+  /// Apaga do celular tudo de uma casa (quando o usuário sai ou é removido).
+  static Future<void> apagarCasa(Database db, String casaId) =>
+      db.transaction((t) async {
+        for (final tabela in ['moradores', 'gastos', 'pagamentos']) {
+          await t.delete(tabela, where: 'casa_id = ?', whereArgs: [casaId]);
+        }
+        await t.delete('casas', where: 'id = ?', whereArgs: [casaId]);
+        await t.delete('meta',
+            where: 'chave LIKE ?', whereArgs: ['pull_%_$casaId']);
+      });
+
+  /// Descarta uma alteração local que o servidor recusou (sem permissão) e
+  /// força baixar a tabela de novo, para voltar à versão do servidor.
+  static Future<void> descartar(
+      Database db, String tabela, String id, String casaId) async {
+    await db.delete(tabela, where: 'id = ?', whereArgs: [id]);
+    await db.delete('meta',
+        where: 'chave = ?', whereArgs: ['pull_${tabela}_$casaId']);
   }
 
   // ---------------- conversão local <-> Supabase ----------------
 
   /// Linha do SQLite -> JSON para o Supabase.
-  static Map<String, Object?> paraRemoto(String tabela, Map<String, Object?> l) {
+  static Map<String, Object?> paraRemoto(
+      String tabela, Map<String, Object?> l) {
     final r = Map<String, Object?>.from(l)..remove('pendente');
     r['deleted'] = l['deleted'] == 1;
+    // Linha antiga (antes do administrador): deixa o servidor decidir.
+    if (tabela == 'casas' && r['admin_id'] == null) r.remove('admin_id');
     if (tabela == 'gastos') {
       r['dividido_entre'] = jsonDecode(l['dividido_entre'] as String);
     }
@@ -108,8 +141,8 @@ class LocalDb {
   static Future<int> contarPendentes(Database db) async {
     var total = 0;
     for (final t in tabelas) {
-      total += Sqflite.firstIntValue(
-              await db.rawQuery('SELECT COUNT(*) FROM $t WHERE pendente = 1')) ??
+      total += Sqflite.firstIntValue(await db
+              .rawQuery('SELECT COUNT(*) FROM $t WHERE pendente = 1')) ??
           0;
     }
     return total;

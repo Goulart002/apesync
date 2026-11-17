@@ -39,6 +39,46 @@ Testes: `flutter test`
 - `lib/data/app_data.dart` — repositório: telas leem/escrevem só no SQLite (funciona offline).
 - `lib/data/sync_service.dart` — push dos pendentes (upsert), pull incremental (`synced_at`),
   conflito "last write wins" (`updated_at`), realtime e detecção de rede.
+- `lib/data/regras_sync.dart` — regras puras do sync (testes em `test/regras_sync_test.dart`).
+
+Garantias da sincronização:
+- **A alteração mais recente vence, decidido no servidor** (trigger `mais_recente_vence`): um
+  celular que estava offline e envia uma versão mais velha não apaga a edição mais nova de
+  outro morador. Relógio de celular adiantado (mais de 5 min) é corrigido para a hora do servidor.
+- **Download com margem de 60 s**: cada download volta um pouco antes da última marca, para
+  não perder linhas gravadas quase ao mesmo tempo; linhas que o celular já tem são ignoradas.
+- **Gastos e pagamentos só citam moradores da própria casa** (triggers `validar_moradores_*`).
+
+## Administração da casa
+
+Quem cria a casa é o **administrador** (`casas.admin_id`). Regras em `lib/data/permissoes.dart`
+(tela) e nas policies de RLS de `supabase/schema.sql` (servidor — valem mesmo fora do app):
+
+| Ação | Morador | Admin |
+|---|---|---|
+| Ver gastos, saldos e moradores | ✅ | ✅ |
+| Lançar gasto | ✅ | ✅ |
+| Editar/excluir gasto | só os que lançou | qualquer um |
+| Registrar/desfazer pagamento | se paga ou recebe | qualquer um |
+| Editar nome | só o próprio | qualquer um |
+| Convidar (código / compartilhar) | ✅ | ✅ |
+| Gerar novo código de convite | — | ✅ |
+| Remover morador quite ou devendo (nunca quem tem a receber) | — | ✅ |
+| Transferir a administração | — | ✅ |
+| Sair da casa (com saldo zerado) | ✅ | depois de transferir |
+
+- Moradores só entram pelo **código de convite** (não existe mais "morador sem conta").
+  Quem foi removido e volta com o código recupera o mesmo registro e o histórico.
+- Quem é removido descobre no próximo sync e o app volta para a tela "Sua casa".
+- Removido **devendo**: o app cria um gasto de categoria **Ajuste** ("Ajuste: dívida de X
+  dividida"), pago por X e dividido igualmente entre quem fica — o saldo de X vai a zero e as
+  contas continuam fechando (`Calculos.ajusteDeRemocao`). Ajustes não entram nos totais do mês,
+  não podem ser editados, e só o admin os exclui, depois que X voltar para a casa (a dívida volta).
+- Se o servidor recusar uma alteração feita offline (ex.: a pessoa perdeu a permissão), o app
+  descarta essa alteração e volta para a versão do servidor, em vez de travar o sync.
+- Depois de atualizar o app, **rode o `supabase/schema.sql` de novo** no SQL Editor (não apaga dados).
+
+Testes em `test/permissoes_test.dart`.
 
 ## Acertos (simplificar dívidas)
 

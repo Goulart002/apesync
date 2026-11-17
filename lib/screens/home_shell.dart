@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../data/app_data.dart';
 import '../routes.dart';
 import '../theme.dart';
 import 'gastos_screen.dart';
@@ -16,6 +17,34 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   int _aba = 0;
+  bool _saiu = false;
+
+  @override
+  void initState() {
+    super.initState();
+    AppData.instance.addListener(_verificarCasa);
+  }
+
+  @override
+  void dispose() {
+    AppData.instance.removeListener(_verificarCasa);
+    super.dispose();
+  }
+
+  /// Saiu da casa ou foi removido (o sync avisa): volta para "Sua casa".
+  void _verificarCasa() {
+    final data = AppData.instance;
+    if (_saiu || !mounted || !data.aberto || data.temCasa) return;
+    _saiu = true;
+    final aviso = data.avisoSaida;
+    data.avisoSaida = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      Navigator.pushNamedAndRemoveUntil(context, Rotas.casa, (_) => false);
+      if (aviso != null) messenger.showSnackBar(SnackBar(content: Text(aviso)));
+    });
+  }
 
   void _irPara(int aba) => setState(() => _aba = aba);
 
