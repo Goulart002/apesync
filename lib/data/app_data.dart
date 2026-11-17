@@ -8,9 +8,20 @@ import 'package:uuid/uuid.dart';
 import 'calculos.dart';
 import 'local_db.dart';
 import 'modelos.dart';
+import 'permissoes.dart';
 import 'sync_service.dart';
 
 export 'modelos.dart';
+export 'permissoes.dart';
+
+/// Erro "de regra" com mensagem pronta para mostrar ao usuário
+/// (ex.: "Transfira a administração antes de sair").
+class AvisoApp implements Exception {
+  final String mensagem;
+  const AvisoApp(this.mensagem);
+  @override
+  String toString() => mensagem;
+}
 
 /// Repositório do app (padrão "offline-first").
 ///
@@ -34,6 +45,10 @@ class AppData extends ChangeNotifier {
   List<Morador> _moradores = [];
   List<Gasto> _gastos = [];
   List<Pagamento> _pagamentos = [];
+
+  /// Mensagem para mostrar quando o usuário sai ou é removido da casa
+  /// (a tela lê e limpa).
+  String? avisoSaida;
 
   Database? get db => _db;
   String? get usuarioId => _uid;
@@ -63,11 +78,12 @@ class AppData extends ChangeNotifier {
     });
 
   /// Pagamentos ativos, do mais recente para o mais antigo.
-  List<Pagamento> get pagamentos => _pagamentos.where((p) => !p.deleted).toList()
-    ..sort((a, b) {
-      final c = b.data.compareTo(a.data);
-      return c != 0 ? c : b.updatedAt.compareTo(a.updatedAt);
-    });
+  List<Pagamento> get pagamentos =>
+      _pagamentos.where((p) => !p.deleted).toList()
+        ..sort((a, b) {
+          final c = b.data.compareTo(a.data);
+          return c != 0 ? c : b.updatedAt.compareTo(a.updatedAt);
+        });
 
   Morador? get meuMorador {
     for (final m in _moradores) {
@@ -101,28 +117,58 @@ class AppData extends ChangeNotifier {
   String nomeDe(String moradorId) =>
       moradorId == euId ? 'Você' : morador(moradorId).nome;
 
+  /// Nome do morador dono de uma conta (ex.: quem lançou um gasto).
+  String nomeDoUsuario(String? usuarioId) {
+    if (usuarioId == null) return 'outro morador';
+    if (usuarioId == _uid) return 'você';
+    for (final m in _moradores) {
+      if (m.usuarioId == usuarioId) return m.nome;
+    }
+    return 'outro morador';
+  }
+
+  // ---------------------------------------------------------------------------
+  // Permissões (administrador x membro)
+  // ---------------------------------------------------------------------------
+
+  Permissoes get permissoes => Permissoes(
+        usuarioId: _uid,
+        adminUsuarioId: casa?.adminId,
+        euMoradorId: euId,
+      );
+
+  bool get souAdmin => permissoes.souAdmin;
+
+  /// Morador que administra a casa (null se ele não estiver mais na lista).
+  Morador? get adminMorador {
+    for (final m in moradores) {
+      if (permissoes.ehAdmin(m)) return m;
+    }
+    return null;
+  }
+
   List<Gasto> gastosDoMes(DateTime mes) => gastos
       .where((g) => g.data.year == mes.year && g.data.month == mes.month)
       .toList();
 
-  int totalCentavos(Iterable<Gasto> lista) =>
-      lista.fold(0, (s, g) => s + g.valorCentavos);
+  /// Totais do mês: ajustes (dívida de quem saiu) não são gasto da casa,
+  /// então ficam de fora (mas continuam contando no saldo).
+  int totalCentavos(Iterable<Gasto> lista) => lista
+      .where((g) => !g.categoria.ehAjuste)
+      .fold(0, (s, g) => s + g.valorCentavos);
 
-  int minhaParteCentavos(Iterable<Gasto> lista) =>
-      lista.fold(0, (s, g) => s + g.parteDe(euId));
+  int minhaParteCentavos(Iterable<Gasto> lista) => lista
+      .where((g) => !g.categoria.ehAjuste)
+      .fold(0, (s, g) => s + g.parteDe(euId));
 
   int saldoDe(String id) => Calculos.saldoDe(id, gastos, pagamentos);
   int saldoCentavos() => saldoDe(euId);
 
-  List<Transferencia> simplificarDividas() => Calculos.simplificar(
-      {for (final m in moradores) m.id: saldoDe(m.id)});
+  List<Transferencia> simplificarDividas() =>
+      Calculos.simplificar({for (final m in moradores) m.id: saldoDe(m.id)});
 
   int dividasSemSimplificar() =>
       Calculos.dividasSemSimplificar(gastos, pagamentos);
-
-  bool moradorEmUso(String id) =>
-      gastos.any((g) => g.pagoPorId == id || g.divididoEntre.contains(id)) ||
-      pagamentos.any((p) => p.deId == id || p.paraId == id);
 
   // ---------------------------------------------------------------------------
   // Ciclo de vida
@@ -157,23 +203,33 @@ class AppData extends ChangeNotifier {
       _pagamentos = [];
     } else {
       final args = [casa!.id];
-      _moradores = (await db.query('moradores',
-              where: 'casa_id = ?', whereArgs: args))
-          .map(Morador.fromMap)
-          .toList();
-      _gastos = (await db.query('gastos', where: 'casa_id = ?', whereArgs: args))
-          .map(Gasto.fromMap)
-          .toList();
-      _pagamentos = (await db.query('pagamentos',
-              where: 'casa_id = ?', whereArgs: args))
-          .map(Pagamento.fromMap)
-          .toList();
+      _moradores =
+          (await db.query('moradores', where: 'casa_id = ?', whereArgs: args))
+              .map(Morador.fromMap)
+              .toList();
+      _gastos =
+          (await db.query('gastos', where: 'casa_id = ?', whereArgs: args))
+              .map(Gasto.fromMap)
+              .toList();
+      _pagamentos =
+          (await db.query('pagamentos', where: 'casa_id = ?', whereArgs: args))
+              .map(Pagamento.fromMap)
+              .toList();
+
+      // O sync baixou o meu registro de morador como excluído: fui
+      // removido pelo administrador. Limpa a casa do celular.
+      final meus = _moradores.where((m) => m.usuarioId == _uid);
+      if (meus.isNotEmpty && meus.every((m) => m.deleted)) {
+        avisoSaida = 'Você foi removido da casa "${casa!.nome}".';
+        await LocalDb.apagarCasa(db, casa!.id);
+        return recarregar();
+      }
     }
     notifyListeners();
   }
 
   Future<int> contarPendentes() async =>
-      _db == null ? 0 : LocalDb.contarPendentes(_db!);
+      _db == null ? 0 : await LocalDb.contarPendentes(_db!);
 
   /// Sai da conta. Os dados continuam no celular (se entrar de novo com a
   /// mesma conta, o que estava pendente ainda sobe).
@@ -204,7 +260,8 @@ class AppData extends ChangeNotifier {
     if (db == null) throw StateError('Banco local fechado');
     linha['updated_at'] = agoraIso();
     linha['pendente'] = 1;
-    await db.insert(tabela, linha, conflictAlgorithm: ConflictAlgorithm.replace);
+    await db.insert(tabela, linha,
+        conflictAlgorithm: ConflictAlgorithm.replace);
     await recarregar();
     SyncService.instance.sincronizar();
   }
@@ -217,23 +274,29 @@ class AppData extends ChangeNotifier {
   Future<void> criarCasa(String nome) async {
     final user = _sb.auth.currentUser!;
     final casaId = novoId();
-    await _gravar('casas', Casa(
-      id: casaId,
-      nome: nome.trim(),
-      codigoConvite: _gerarCodigo(),
-      criadoPor: user.id,
-      updatedAt: '',
-    ).toLocal());
-    await _gravar('moradores', Morador(
-      id: novoId(),
-      casaId: casaId,
-      nome: (user.userMetadata?['nome'] as String?)?.trim().isNotEmpty == true
-          ? (user.userMetadata!['nome'] as String).trim()
-          : (user.email ?? 'Eu').split('@').first,
-      cor: 0,
-      usuarioId: user.id,
-      updatedAt: '',
-    ).toLocal());
+    await _gravar(
+        'casas',
+        Casa(
+          id: casaId,
+          nome: nome.trim(),
+          codigoConvite: _gerarCodigo(),
+          criadoPor: user.id,
+          adminId: user.id, // quem cria a casa é o administrador
+          updatedAt: '',
+        ).toLocal());
+    await _gravar(
+        'moradores',
+        Morador(
+          id: novoId(),
+          casaId: casaId,
+          nome:
+              (user.userMetadata?['nome'] as String?)?.trim().isNotEmpty == true
+                  ? (user.userMetadata!['nome'] as String).trim()
+                  : (user.email ?? 'Eu').split('@').first,
+          cor: 0,
+          usuarioId: user.id,
+          updatedAt: '',
+        ).toLocal());
   }
 
   /// Entra numa casa existente pelo código de convite (precisa de internet).
@@ -261,8 +324,7 @@ class AppData extends ChangeNotifier {
   }
 
   Future<void> _baixarCasa(String casaId) async {
-    final row =
-        await _sb.from('casas').select().eq('id', casaId).single();
+    final row = await _sb.from('casas').select().eq('id', casaId).single();
     await _db!.insert('casas', LocalDb.deRemoto('casas', row),
         conflictAlgorithm: ConflictAlgorithm.replace);
     await recarregar();
@@ -275,58 +337,155 @@ class AppData extends ChangeNotifier {
     return List.generate(6, (_) => letras[r.nextInt(letras.length)]).join();
   }
 
+  /// Admin: gera um novo código de convite (o antigo para de funcionar).
+  /// Funciona offline; o código novo vale quando sincronizar.
+  Future<void> gerarNovoCodigo() async {
+    if (!permissoes.podeGerarCodigo) {
+      throw const AvisoApp('Só o administrador pode gerar um novo código');
+    }
+    await _gravar(
+        'casas', casa!.copia(codigoConvite: _gerarCodigo()).toLocal());
+  }
+
+  /// Admin: passa a administração para outro morador (precisa de internet).
+  Future<void> transferirAdmin(Morador m) async {
+    if (!permissoes.podeTornarAdmin(m)) {
+      throw const AvisoApp('Escolha outro morador que tenha conta no app');
+    }
+    await SyncService.instance.sincronizar(); // sobe o que estiver pendente
+    await _sb.rpc('transferir_admin',
+        params: {'p_casa': casa!.id, 'p_morador': m.id});
+    await _baixarCasa(casa!.id);
+  }
+
+  /// Sai da casa (precisa de internet). Admin precisa transferir antes, e
+  /// as contas precisam estar acertadas.
+  Future<void> sairDaCasa() async {
+    final c = casa;
+    final eu = meuMorador;
+    if (c == null || eu == null) return;
+    final motivo = permissoes.motivoNaoPodeSair(
+      meuSaldo: saldoDe(eu.id),
+      outrosComConta:
+          moradores.where((m) => m.temConta && m.id != eu.id).length,
+    );
+    if (motivo != null) throw AvisoApp(motivo);
+
+    // Sobe o que estiver pendente antes, para não perder nada.
+    await SyncService.instance.sincronizar();
+    final r = await _sb
+        .from('moradores')
+        .update({'deleted': true, 'updated_at': agoraIso()})
+        .eq('id', eu.id)
+        .select('id');
+    if (r.isEmpty) throw const AvisoApp('Não foi possível sair da casa');
+
+    avisoSaida = 'Você saiu da casa "${c.nome}".';
+    await LocalDb.apagarCasa(_db!, c.id);
+    await recarregar();
+  }
+
   // ---- Moradores ----
+  // Moradores novos só entram pelo código de convite (entrarNaCasa).
 
-  Future<void> salvarMorador({String? id, required String nome}) async {
-    final existente = id == null ? null : morador(id);
-    await _gravar('moradores', Morador(
-      id: id ?? novoId(),
-      casaId: casa!.id,
-      nome: nome.trim(),
-      cor: existente?.cor ?? _moradores.length % paletaMoradores.length,
-      usuarioId: existente?.usuarioId,
-      updatedAt: '',
-    ).toLocal());
+  Future<void> editarNome(Morador m, String nome) async {
+    if (!permissoes.podeEditarMorador(m)) {
+      throw const AvisoApp('Você só pode editar o seu próprio nome');
+    }
+    await _gravar('moradores', m.copia(nome: nome.trim()).toLocal());
   }
 
-  /// Exclusão lógica. Retorna false (e não exclui) se o morador aparece em
-  /// algum gasto ou pagamento, para não quebrar os saldos.
-  Future<bool> excluirMorador(String id) async {
-    if (moradorEmUso(id) || id == euId) return false;
-    final m = morador(id);
-    await _gravar('moradores', Morador(
-      id: m.id,
-      casaId: m.casaId,
-      nome: m.nome,
-      cor: m.cor,
-      usuarioId: m.usuarioId,
-      updatedAt: '',
-      deleted: true,
-    ).toLocal());
-    return true;
+  /// Ajuste que será criado se [m] for removido agora (null = não deve nada).
+  Gasto? previaAjuste(Morador m) => Calculos.ajusteDeRemocao(
+        id: novoId(),
+        casaId: casa?.id ?? '',
+        removido: m,
+        saldo: saldoDe(m.id),
+        ficam: moradores.map((o) => o.id).toList(),
+        data: DateTime.now(),
+        criadoPor: _uid,
+      );
+
+  /// Admin: remove um morador da casa (exclusão lógica: o nome continua
+  /// aparecendo nos gastos antigos). Quem tem a receber não pode ser
+  /// removido; se estiver devendo, a dívida vira um ajuste dividido entre
+  /// quem fica.
+  Future<void> removerMorador(Morador m) async {
+    final motivo = permissoes.motivoNaoPodeRemover(m, saldoDe(m.id));
+    if (motivo != null) throw AvisoApp(motivo);
+    final ajuste = previaAjuste(m);
+    if (ajuste != null) await _gravar('gastos', ajuste.toLocal());
+    await _gravar('moradores', m.copia(deleted: true).toLocal());
   }
+
+  /// Ajuste só pode ser excluído pelo admin e se a pessoa voltou para a
+  /// casa (senão a dívida voltaria para alguém que não está mais na lista).
+  bool podeExcluirAjuste(Gasto g) =>
+      souAdmin && moradores.any((m) => m.id == g.pagoPorId);
 
   // ---- Gastos ----
 
-  /// Cria (id novo) ou atualiza (id existente) um gasto.
-  Future<void> salvarGasto(Gasto g) => _gravar('gastos', g.toLocal());
+  Gasto? _gastoSalvo(String id) {
+    for (final g in _gastos) {
+      if (g.id == id) return g;
+    }
+    return null;
+  }
 
-  Future<void> excluirGasto(Gasto g) =>
-      _gravar('gastos', g.copiaExcluida().toLocal());
+  void _conferirGasto(Gasto g, {bool excluir = false}) {
+    final salvo = _gastoSalvo(g.id);
+    if (salvo == null) return; // gasto novo
+    if (salvo.categoria.ehAjuste) {
+      if (!excluir) throw const AvisoApp('Ajustes não podem ser editados');
+      if (!podeExcluirAjuste(salvo)) {
+        throw const AvisoApp('Só o administrador pode desfazer o ajuste, '
+            'e só depois que a pessoa voltar para a casa');
+      }
+      return;
+    }
+    if (!permissoes.podeEditarGasto(salvo)) {
+      throw const AvisoApp(
+          'Só quem lançou o gasto ou o administrador pode alterá-lo');
+    }
+  }
+
+  /// Cria (id novo) ou atualiza (id existente) um gasto.
+  Future<void> salvarGasto(Gasto g) async {
+    _conferirGasto(g);
+    await _gravar('gastos', g.toLocal());
+  }
+
+  Future<void> excluirGasto(Gasto g) async {
+    _conferirGasto(g, excluir: true);
+    await _gravar('gastos', g.copiaExcluida().toLocal());
+  }
 
   // ---- Pagamentos ----
 
-  Future<void> registrarPagamento(
-          String deId, String paraId, int valorCentavos) =>
-      _gravar('pagamentos', Pagamento(
-        id: novoId(),
-        casaId: casa!.id,
-        deId: deId,
-        paraId: paraId,
-        valorCentavos: valorCentavos,
-        data: DateTime.now(),
-      ).toLocal());
+  void _conferirPagamento(String deId, String paraId) {
+    if (!permissoes.podeMexerNoPagamento(deId, paraId)) {
+      throw const AvisoApp(
+          'Só quem paga, quem recebe ou o administrador pode fazer isso');
+    }
+  }
 
-  Future<void> excluirPagamento(Pagamento p) =>
-      _gravar('pagamentos', p.copiaExcluida().toLocal());
+  Future<void> registrarPagamento(
+      String deId, String paraId, int valorCentavos) async {
+    _conferirPagamento(deId, paraId);
+    await _gravar(
+        'pagamentos',
+        Pagamento(
+          id: novoId(),
+          casaId: casa!.id,
+          deId: deId,
+          paraId: paraId,
+          valorCentavos: valorCentavos,
+          data: DateTime.now(),
+        ).toLocal());
+  }
+
+  Future<void> excluirPagamento(Pagamento p) async {
+    _conferirPagamento(p.deId, p.paraId);
+    await _gravar('pagamentos', p.copiaExcluida().toLocal());
+  }
 }

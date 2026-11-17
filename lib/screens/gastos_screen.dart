@@ -99,7 +99,10 @@ class _GastosScreenState extends State<GastosScreen> {
               child: Row(
                 children: [
                   _chip('Todos', null),
-                  for (final c in Categoria.values) _chip(c.label, c),
+                  for (final c in CategoriaInfo.lancaveis) _chip(c.label, c),
+                  // "Ajuste" só aparece se houver algum no mês.
+                  if (doMes.any((g) => g.categoria.ehAjuste))
+                    _chip(Categoria.ajuste.label, Categoria.ajuste),
                 ],
               ),
             ),

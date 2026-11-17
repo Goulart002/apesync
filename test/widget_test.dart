@@ -4,6 +4,12 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   testWidgets('Login navega para Cadastro e volta', (tester) async {
+    // Tela de celular (412x915 dp); o padrão do teste (800x600) corta o
+    // botão "Cadastre-se".
+    tester.view.physicalSize = const Size(1236, 2745);
+    tester.view.devicePixelRatio = 3.0;
+    addTearDown(tester.view.reset);
+
     await tester.pumpWidget(const ApeSyncApp());
     expect(find.text('ApeSync'), findsOneWidget);
 
