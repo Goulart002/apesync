@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app_data.dart';
 import 'local_db.dart';
+import 'regras_sync.dart';
 
 enum EstadoSync { semInternet, sincronizando, pendente, sincronizado, erro }
 
@@ -15,9 +16,11 @@ enum EstadoSync { semInternet, sincronizando, pendente, sincronizado, erro }
 /// 1. PUSH: envia as linhas com `pendente = 1` (upsert) e as marca como
 ///    sincronizadas.
 /// 2. PULL: baixa só o que mudou no servidor desde o último download
-///    (`synced_at > última marca`) e grava no SQLite.
+///    (`synced_at > última marca − 60 s` de margem) e grava no SQLite.
 /// 3. Conflito (mesmo registro alterado em dois celulares): vence a
-///    alteração com o `updated_at` mais recente ("last write wins").
+///    alteração com o `updated_at` mais recente ("last write wins"). Quem
+///    decide é o servidor (trigger `mais_recente_vence` em schema.sql); no
+///    download, o celular aplica a mesma regra (ver [RegrasSync]).
 ///
 /// Roda: ao abrir o app, ao voltar a internet, após cada alteração local,
 /// a cada 60 s e quando o Realtime avisa que outro morador mudou algo.
@@ -119,20 +122,16 @@ class SyncService extends ChangeNotifier {
 
   /// Envia ao Supabase tudo que está pendente, na ordem das chaves
   /// estrangeiras (casa antes de morador, morador antes de gasto...).
-  /// Retorna true se alguma alteração local foi descartada.
+  /// Retorna true se alguma linha local mudou (descartada ou trocada pela
+  /// versão do servidor).
   Future<bool> _push(Database db, String casaId) async {
-    var descartou = false;
+    var mudou = false;
     for (final t in LocalDb.tabelas) {
       final linhas = await db.query(t, where: 'pendente = 1');
       if (linhas.isEmpty) continue;
 
       try {
-        await _sb
-            .from(t)
-            .upsert(linhas.map((l) => LocalDb.paraRemoto(t, l)).toList());
-        for (final l in linhas) {
-          await _desmarcar(db, t, l);
-        }
+        mudou = await _enviar(db, t, linhas) || mudou;
       } on PostgrestException catch (e) {
         if (!_recusadoPeloServidor(e)) rethrow;
         // Alguma linha foi recusada pelas regras (ex.: a pessoa perdeu a
@@ -141,18 +140,46 @@ class SyncService extends ChangeNotifier {
         // versão do servidor — senão o sync travaria para sempre.
         for (final l in linhas) {
           try {
-            await _sb.from(t).upsert(LocalDb.paraRemoto(t, l));
-            await _desmarcar(db, t, l);
+            mudou = await _enviar(db, t, [l]) || mudou;
           } on PostgrestException catch (e) {
             if (!_recusadoPeloServidor(e)) rethrow;
             debugPrint('Servidor recusou $t ${l['id']}: ${e.message}');
             await LocalDb.descartar(db, t, l['id'] as String, casaId);
-            descartou = true;
+            mudou = true;
           }
         }
       }
     }
-    return descartou;
+    return mudou;
+  }
+
+  /// Faz o upsert e confere o que o servidor gravou de fato. Uma linha que
+  /// não volta na resposta foi IGNORADA pelo servidor por ser mais velha que
+  /// a versão dele (trigger mais_recente_vence) — então baixa a versão do
+  /// servidor na hora, em vez de continuar mostrando a velha.
+  /// Retorna true se trocou alguma linha local pela do servidor.
+  Future<bool> _enviar(
+      Database db, String t, List<Map<String, Object?>> linhas) async {
+    final gravadas = await _sb
+        .from(t)
+        .upsert(linhas.map((l) => LocalDb.paraRemoto(t, l)).toList())
+        .select('id');
+    final aceitas = {for (final r in gravadas) r['id']};
+    for (final l in linhas) {
+      await _desmarcar(db, t, l);
+    }
+
+    final ignoradas = [
+      for (final l in linhas)
+        if (!aceitas.contains(l['id'])) l['id'] as String,
+    ];
+    if (ignoradas.isEmpty) return false;
+    final doServidor = await _sb.from(t).select().inFilter('id', ignoradas);
+    for (final r in doServidor) {
+      await db.insert(t, LocalDb.deRemoto(t, r),
+          conflictAlgorithm: ConflictAlgorithm.replace);
+    }
+    return true;
   }
 
   /// Só desmarca se ninguém alterou a linha durante o envio.
@@ -165,41 +192,37 @@ class SyncService extends ChangeNotifier {
   bool _recusadoPeloServidor(PostgrestException e) =>
       e.code == '42501' || e.code == 'P0001';
 
-  /// Baixa o que mudou no servidor desde o último download.
+  /// Baixa o que mudou no servidor desde o último download (com uma margem
+  /// de segurança, ver [RegrasSync.margem]).
   /// Retorna true se alguma linha local mudou.
   Future<bool> _pull(Database db, String casaId) async {
     var mudou = false;
     for (final t in LocalDb.tabelas) {
       final chave = 'pull_${t}_$casaId';
-      final desde = await LocalDb.lerMeta(db, chave) ?? '1970-01-01T00:00:00Z';
+      final marca = await LocalDb.lerMeta(db, chave);
 
       final filtro = _sb.from(t).select();
       final rows = await (t == 'casas'
               ? filtro.eq('id', casaId)
               : filtro.eq('casa_id', casaId))
-          .gt('synced_at', desde)
+          .gt('synced_at', RegrasSync.desdeComMargem(marca))
           .order('synced_at', ascending: true);
       if (rows.isEmpty) continue;
 
-      for (final remoto in rows) {
-        final local = await db.query(t,
-            columns: ['pendente', 'updated_at'],
-            where: 'id = ?',
-            whereArgs: [remoto['id']]);
-
-        // Conflito: a versão local pendente é mais nova -> mantém a local
-        // (ela vai subir no próximo push e sobrescrever o servidor).
-        if (local.isNotEmpty && local.first['pendente'] == 1) {
-          final dataLocal = DateTime.parse(local.first['updated_at'] as String);
-          final dataRemota = DateTime.parse(remoto['updated_at'] as String);
-          if (dataLocal.isAfter(dataRemota)) continue;
+      for (final r in rows) {
+        final remoto = LocalDb.deRemoto(t, r);
+        final local = await db.query(t, where: 'id = ?', whereArgs: [r['id']]);
+        // Decide quem vence (celular x servidor) e ignora o que já temos.
+        if (!RegrasSync.aplicarRemoto(
+            local.isEmpty ? null : local.first, remoto)) {
+          continue;
         }
-
-        await db.insert(t, LocalDb.deRemoto(t, remoto),
+        await db.insert(t, remoto,
             conflictAlgorithm: ConflictAlgorithm.replace);
         mudou = true;
       }
-      await LocalDb.gravarMeta(db, chave, rows.last['synced_at'] as String);
+      await LocalDb.gravarMeta(db, chave,
+          RegrasSync.novaMarca(marca, rows.last['synced_at'] as String));
     }
     return mudou;
   }

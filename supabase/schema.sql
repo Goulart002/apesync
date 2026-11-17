@@ -161,6 +161,71 @@ drop trigger if exists trg_proteger_pagamento on public.pagamentos;
 create trigger trg_proteger_pagamento before update on public.pagamentos
   for each row execute function public.proteger_pagamento();
 
+-- "A alteração mais recente vence" (last write wins), decidido NO SERVIDOR.
+-- Ex.: o celular A editou um gasto offline às 10h; o celular B editou o
+-- mesmo gasto às 11h. Quando A volta a ter internet e envia a versão das
+-- 10h, ela é ignorada e o servidor fica com a das 11h (que A baixa logo em
+-- seguida). Sem isso, quem enviasse por último apagaria a edição mais nova.
+-- Também impede que um celular com o relógio adiantado vença sempre.
+-- (O nome começa com "trg_0" para rodar antes dos outros triggers.)
+create or replace function public.mais_recente_vence()
+returns trigger language plpgsql as $$
+begin
+  if new.updated_at > now() + interval '5 minutes' then
+    new.updated_at := now();
+  end if;
+  if tg_op = 'UPDATE' and new.updated_at < old.updated_at then
+    return null;  -- versão mais velha que a do servidor: ignora em silêncio
+  end if;
+  return new;
+end $$;
+
+do $$
+declare t text;
+begin
+  foreach t in array array['casas','moradores','gastos','pagamentos'] loop
+    execute format('drop trigger if exists trg_0_mais_recente on public.%I', t);
+    execute format(
+      'create trigger trg_0_mais_recente before insert or update on public.%I
+         for each row execute function public.mais_recente_vence()', t);
+  end loop;
+end $$;
+
+-- Quem pagou, quem divide e quem paga/recebe precisam ser moradores DESTA
+-- casa (atuais ou antigos: gastos antigos e ajustes citam quem já saiu).
+create or replace function public.validar_moradores_gasto()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from public.moradores
+                  where id = new.pago_por and casa_id = new.casa_id) then
+    raise exception 'Quem pagou não é morador desta casa';
+  end if;
+  if exists (select 1 from unnest(new.dividido_entre) as d(id)
+              where not exists (select 1 from public.moradores m
+                                 where m.id = d.id and m.casa_id = new.casa_id)) then
+    raise exception 'A divisão inclui alguém que não é morador desta casa';
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists trg_validar_moradores on public.gastos;
+create trigger trg_validar_moradores before insert or update on public.gastos
+  for each row execute function public.validar_moradores_gasto();
+
+create or replace function public.validar_moradores_pagamento()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if (select count(*) from public.moradores
+       where id in (new.de_id, new.para_id) and casa_id = new.casa_id) < 2 then
+    raise exception 'Quem paga e quem recebe precisam ser moradores desta casa';
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists trg_validar_moradores on public.pagamentos;
+create trigger trg_validar_moradores before insert or update on public.pagamentos
+  for each row execute function public.validar_moradores_pagamento();
+
 -- ---------------------------------------------------------------------
 -- 3) Segurança (Row Level Security)
 --

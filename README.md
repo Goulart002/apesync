@@ -39,6 +39,15 @@ Testes: `flutter test`
 - `lib/data/app_data.dart` — repositório: telas leem/escrevem só no SQLite (funciona offline).
 - `lib/data/sync_service.dart` — push dos pendentes (upsert), pull incremental (`synced_at`),
   conflito "last write wins" (`updated_at`), realtime e detecção de rede.
+- `lib/data/regras_sync.dart` — regras puras do sync (testes em `test/regras_sync_test.dart`).
+
+Garantias da sincronização:
+- **A alteração mais recente vence, decidido no servidor** (trigger `mais_recente_vence`): um
+  celular que estava offline e envia uma versão mais velha não apaga a edição mais nova de
+  outro morador. Relógio de celular adiantado (mais de 5 min) é corrigido para a hora do servidor.
+- **Download com margem de 60 s**: cada download volta um pouco antes da última marca, para
+  não perder linhas gravadas quase ao mesmo tempo; linhas que o celular já tem são ignoradas.
+- **Gastos e pagamentos só citam moradores da própria casa** (triggers `validar_moradores_*`).
 
 ## Administração da casa
 
