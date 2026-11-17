@@ -44,6 +44,37 @@ class Calculos {
     return resultado;
   }
 
+  /// Lançamento de ajuste ao remover um morador que está DEVENDO
+  /// (saldo < 0): é como se ele tivesse "pago" a dívida e esse valor fosse
+  /// um gasto dividido igualmente entre quem fica. Resultado: o saldo dele
+  /// vai a zero e a soma dos saldos continua zero. Os gastos antigos não
+  /// mudam, e excluir o ajuste faz a dívida voltar.
+  ///
+  /// Retorna null se não há dívida (saldo >= 0) ou ninguém fica na casa.
+  static Gasto? ajusteDeRemocao({
+    required String id,
+    required String casaId,
+    required Morador removido,
+    required int saldo,
+    required List<String> ficam,
+    required DateTime data,
+    String? criadoPor,
+  }) {
+    final restantes = ficam.where((m) => m != removido.id).toList();
+    if (saldo >= 0 || restantes.isEmpty) return null;
+    return Gasto(
+      id: id,
+      casaId: casaId,
+      descricao: 'Ajuste: dívida de ${removido.nome} dividida',
+      valorCentavos: -saldo,
+      categoria: Categoria.ajuste,
+      pagoPorId: removido.id,
+      divididoEntre: restantes,
+      data: data,
+      criadoPor: criadoPor,
+    );
+  }
+
   /// Quantas dívidas existiriam sem simplificar (pares com saldo pendente).
   static int dividasSemSimplificar(
       Iterable<Gasto> gastos, Iterable<Pagamento> pagamentos) {

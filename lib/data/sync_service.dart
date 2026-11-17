@@ -88,13 +88,14 @@ class SyncService extends ChangeNotifier {
         estado = EstadoSync.semInternet;
         return;
       }
-      if (reiniciarRealtime || _canalCasaId != casa.id) _assinarRealtime(casa.id);
+      if (reiniciarRealtime || _canalCasaId != casa.id)
+        _assinarRealtime(casa.id);
 
       _mudar(EstadoSync.sincronizando);
       var mudou = false;
       do {
         _deNovo = false;
-        await _push(db);
+        mudou = await _push(db, casa.id) || mudou;
         mudou = await _pull(db, casa.id) || mudou;
       } while (_deNovo);
 
@@ -118,23 +119,51 @@ class SyncService extends ChangeNotifier {
 
   /// Envia ao Supabase tudo que está pendente, na ordem das chaves
   /// estrangeiras (casa antes de morador, morador antes de gasto...).
-  Future<void> _push(Database db) async {
+  /// Retorna true se alguma alteração local foi descartada.
+  Future<bool> _push(Database db, String casaId) async {
+    var descartou = false;
     for (final t in LocalDb.tabelas) {
       final linhas = await db.query(t, where: 'pendente = 1');
       if (linhas.isEmpty) continue;
 
-      await _sb
-          .from(t)
-          .upsert(linhas.map((l) => LocalDb.paraRemoto(t, l)).toList());
-
-      // Só desmarca se ninguém alterou a linha durante o envio.
-      for (final l in linhas) {
-        await db.update(t, {'pendente': 0},
-            where: 'id = ? AND updated_at = ?',
-            whereArgs: [l['id'], l['updated_at']]);
+      try {
+        await _sb
+            .from(t)
+            .upsert(linhas.map((l) => LocalDb.paraRemoto(t, l)).toList());
+        for (final l in linhas) {
+          await _desmarcar(db, t, l);
+        }
+      } on PostgrestException catch (e) {
+        if (!_recusadoPeloServidor(e)) rethrow;
+        // Alguma linha foi recusada pelas regras (ex.: a pessoa perdeu a
+        // permissão enquanto estava offline). Envia uma por uma: as
+        // aceitas sobem, as recusadas são descartadas e voltam a ser a
+        // versão do servidor — senão o sync travaria para sempre.
+        for (final l in linhas) {
+          try {
+            await _sb.from(t).upsert(LocalDb.paraRemoto(t, l));
+            await _desmarcar(db, t, l);
+          } on PostgrestException catch (e) {
+            if (!_recusadoPeloServidor(e)) rethrow;
+            debugPrint('Servidor recusou $t ${l['id']}: ${e.message}');
+            await LocalDb.descartar(db, t, l['id'] as String, casaId);
+            descartou = true;
+          }
+        }
       }
     }
+    return descartou;
   }
+
+  /// Só desmarca se ninguém alterou a linha durante o envio.
+  Future<void> _desmarcar(Database db, String t, Map<String, Object?> l) =>
+      db.update(t, {'pendente': 0},
+          where: 'id = ? AND updated_at = ?',
+          whereArgs: [l['id'], l['updated_at']]);
+
+  /// 42501 = sem permissão (RLS); P0001 = regra de um trigger (raise).
+  bool _recusadoPeloServidor(PostgrestException e) =>
+      e.code == '42501' || e.code == 'P0001';
 
   /// Baixa o que mudou no servidor desde o último download.
   /// Retorna true se alguma linha local mudou.
@@ -142,8 +171,7 @@ class SyncService extends ChangeNotifier {
     var mudou = false;
     for (final t in LocalDb.tabelas) {
       final chave = 'pull_${t}_$casaId';
-      final desde =
-          await LocalDb.lerMeta(db, chave) ?? '1970-01-01T00:00:00Z';
+      final desde = await LocalDb.lerMeta(db, chave) ?? '1970-01-01T00:00:00Z';
 
       final filtro = _sb.from(t).select();
       final rows = await (t == 'casas'
@@ -180,7 +208,18 @@ class SyncService extends ChangeNotifier {
   /// na hora e a gente faz um pull (como mensagem chegando no WhatsApp).
   void _assinarRealtime(String casaId) {
     _pararRealtime();
-    var canal = _sb.channel('casa-$casaId');
+    // A própria casa: código de convite novo, troca de administrador...
+    var canal = _sb.channel('casa-$casaId').onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'casas',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'id',
+            value: casaId,
+          ),
+          callback: (_) => sincronizar(),
+        );
     for (final t in ['moradores', 'gastos', 'pagamentos']) {
       canal = canal.onPostgresChanges(
         event: PostgresChangeEvent.all,

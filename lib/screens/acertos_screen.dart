@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/app_data.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import 'fluxo.dart';
 
 /// Acertos: dívidas simplificadas (quem paga quem), saldo de cada morador
 /// e histórico de pagamentos registrados.
@@ -33,8 +34,14 @@ class AcertosScreen extends StatelessWidget {
       ),
     );
     if (ok != true || !context.mounted) return;
-    data.registrarPagamento(t.deId, t.paraId, t.valorCentavos);
-    ScaffoldMessenger.of(context).showSnackBar(
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await data.registrarPagamento(t.deId, t.paraId, t.valorCentavos);
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(mensagemErro(e))));
+      return;
+    }
+    messenger.showSnackBar(
       SnackBar(
           content: Text(
               'Pagamento registrado: $de → $para ${formatarReais(t.valorCentavos)}')),
@@ -183,6 +190,8 @@ class _TransferenciaCard extends StatelessWidget {
     final de = data.morador(t.deId);
     final para = data.morador(t.paraId);
     final envolveMim = t.deId == data.euId || t.paraId == data.euId;
+    final podeRegistrar =
+        data.permissoes.podeMexerNoPagamento(t.deId, t.paraId);
 
     return AppCard(
       border: Border.all(
@@ -212,22 +221,27 @@ class _TransferenciaCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: onPagar,
-              icon: const Icon(Icons.check, size: 18),
-              label: const Text('Registrar pagamento'),
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size.fromHeight(42),
-                foregroundColor: AppColors.primary,
-                backgroundColor: AppColors.primaryLight,
-                side: BorderSide.none,
-                textStyle: const TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.w600),
+          if (podeRegistrar)
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: onPagar,
+                icon: const Icon(Icons.check, size: 18),
+                label: const Text('Registrar pagamento'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(42),
+                  foregroundColor: AppColors.primary,
+                  backgroundColor: AppColors.primaryLight,
+                  side: BorderSide.none,
+                  textStyle: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w600),
+                ),
               ),
-            ),
-          ),
+            )
+          else
+            const Text(
+                'Quem paga, quem recebe ou o administrador registra o pagamento.',
+                style: TextStyle(fontSize: 12, color: AppColors.muted)),
         ],
       ),
     );
@@ -324,6 +338,12 @@ class _PagamentoTile extends StatelessWidget {
   Future<void> _desfazer(BuildContext context) async {
     final data = AppData.instance;
     final messenger = ScaffoldMessenger.of(context);
+    if (!data.permissoes.podeMexerNoPagamento(p.deId, p.paraId)) {
+      messenger.showSnackBar(const SnackBar(
+          content: Text('Só quem pagou, quem recebeu ou o administrador '
+              'pode desfazer este pagamento')));
+      return;
+    }
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -346,7 +366,12 @@ class _PagamentoTile extends StatelessWidget {
       ),
     );
     if (ok != true) return;
-    await data.excluirPagamento(p);
+    try {
+      await data.excluirPagamento(p);
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(mensagemErro(e))));
+      return;
+    }
     messenger.showSnackBar(
         const SnackBar(content: Text('Pagamento desfeito')));
   }

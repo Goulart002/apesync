@@ -99,7 +99,7 @@ class InicioScreen extends StatelessWidget {
                               color: AppColors.primary),
                         ),
                         SizedBox(height: 6),
-                        Text('Adicionar',
+                        Text('Convidar',
                             style: TextStyle(
                                 fontSize: 12, fontWeight: FontWeight.w500)),
                       ],
