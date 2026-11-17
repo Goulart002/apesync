@@ -4,7 +4,7 @@
 -- Pode rodar de novo sem problema (é idempotente).
 -- =====================================================================
 
--- ---------------------------------------------------------------------
+-- --------------------------------------------------------------------
 -- 1) Tabelas
 -- Todas usam UUID gerado NO CELULAR (permite criar registros offline),
 -- exclusão lógica (deleted) para a exclusão também sincronizar, e duas
