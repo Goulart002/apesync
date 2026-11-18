@@ -113,6 +113,23 @@ Testes em `test/acertos_test.dart` (com os gastos de exemplo: 3 transferências 
   o mesmo mês não duplicam. Lógica em `lib/data/recorrentes.dart`, testes em
   `test/recorrentes_test.dart`.
 
+## Tarefas da casa
+
+Aba **Tarefas** (`screens/tarefas_screen.dart`) e **Nova tarefa** (`screens/nova_tarefa_screen.dart`):
+- Tarefa **avulsa** ("Comprar papel higiênico, para a Bia, até sexta") ou **repetida**: todo dia,
+  dias da semana (ex.: seg/qua/sex) ou todo mês, com **rodízio**: ao marcar como feita, a vez passa
+  para o próximo da lista (pulando quem saiu da casa) e a data vai para a próxima vez. Se estava
+  atrasada há várias vezes, pula as perdidas.
+- Lista **Atrasadas / Hoje / Próximas**, filtro **Da casa / Minhas**, **placar do mês** (quem fez
+  mais) e **feitas recentemente** ("Caio fez *Tirar o lixo* no lugar da Bia").
+- Início: cartão **Suas tarefas de hoje**. Ao marcar como feita aparece **Desfazer**. Tarefa de
+  **compras** oferece lançar o gasto já preenchido.
+- Permissões: qualquer morador cria e marca como feita (inclusive cobrindo a vez de outro); editar
+  e excluir só quem criou ou o admin (trigger `proteger_tarefa` no servidor).
+- Histórico em `tarefas_feitas` com id determinístico (tarefa + data): a mesma vez não conta duas
+  vezes, mesmo marcada em dois celulares. Regras em `lib/data/rodizio.dart`, testes em
+  `test/rodizio_test.dart`.
+
 ## Scanner de nota fiscal
 
 Botão **Escanear nota fiscal** no Novo gasto: tira foto (ou escolhe da galeria), lê o texto com
@@ -133,11 +150,13 @@ Código em `lib/services/nota_scanner.dart`; testes em `test/nota_scanner_test.d
 | Início | `screens/inicio_screen.dart` | aba 0 de `/home` |
 | Gastos | `screens/gastos_screen.dart` | aba 1 de `/home` |
 | Novo gasto | `screens/novo_gasto_screen.dart` | `/novo-gasto` |
-| Sobre o app | `screens/sobre_screen.dart` | aba 2 de `/home` |
+| Sobre o app | `screens/sobre_screen.dart` | aba 3 de `/home` |
 | Acertos | `screens/acertos_screen.dart` | `/acertos` |
 | Sua casa | `screens/casa_screen.dart` | `/casa` |
 | Moradores | `screens/moradores_screen.dart` | `/moradores` |
 | Gastos fixos | `screens/recorrentes_screen.dart` | `/gastos-fixos` |
+| Tarefas | `screens/tarefas_screen.dart` | aba 2 de `/home` |
+| Nova tarefa | `screens/nova_tarefa_screen.dart` | `/nova-tarefa` |
 
 ## Navegação
 

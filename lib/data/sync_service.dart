@@ -246,7 +246,14 @@ class SyncService extends ChangeNotifier {
           ),
           callback: (_) => sincronizar(),
         );
-    for (final t in ['moradores', 'recorrencias', 'gastos', 'pagamentos']) {
+    for (final t in [
+      'moradores',
+      'recorrencias',
+      'gastos',
+      'pagamentos',
+      'tarefas',
+      'tarefas_feitas',
+    ]) {
       canal = canal.onPostgresChanges(
         event: PostgresChangeEvent.all,
         schema: 'public',

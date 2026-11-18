@@ -10,6 +10,7 @@ import 'screens/casa_screen.dart';
 import 'screens/home_shell.dart';
 import 'screens/login_screen.dart';
 import 'screens/moradores_screen.dart';
+import 'screens/nova_tarefa_screen.dart';
 import 'screens/novo_gasto_screen.dart';
 import 'screens/recorrentes_screen.dart';
 import 'theme.dart';
@@ -61,6 +62,7 @@ class ApeSyncApp extends StatelessWidget {
         Rotas.acertos: (_) => const AcertosScreen(),
         Rotas.moradores: (_) => const MoradoresScreen(),
         Rotas.gastosFixos: (_) => const RecorrentesScreen(),
+        Rotas.novaTarefa: (_) => const NovaTarefaScreen(),
       },
     );
   }

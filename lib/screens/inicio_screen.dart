@@ -5,11 +5,14 @@ import '../routes.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/sync_badge.dart';
+import '../widgets/tarefa_widgets.dart';
 
-/// Tela inicial (dashboard): saldo, resumo do mês, moradores, últimos gastos.
+/// Tela inicial (dashboard): saldo, resumo do mês, suas tarefas de hoje,
+/// moradores, últimos gastos.
 class InicioScreen extends StatelessWidget {
   final VoidCallback onVerTodos;
-  const InicioScreen({super.key, required this.onVerTodos});
+  final VoidCallback? onVerTarefas;
+  const InicioScreen({super.key, required this.onVerTodos, this.onVerTarefas});
 
   @override
   Widget build(BuildContext context) {
@@ -65,6 +68,13 @@ class InicioScreen extends StatelessWidget {
                         formatarReais(data.minhaParteCentavos(doMes)))),
               ],
             ),
+
+            // Suas tarefas de hoje (e as atrasadas)
+            if (data.minhasTarefasDeHoje.isNotEmpty) ...[
+              SectionHeader('Suas tarefas de hoje',
+                  action: 'Ver todas', onAction: onVerTarefas),
+              TarefasCard(data.minhasTarefasDeHoje),
+            ],
 
             // Moradores
             SectionHeader('Moradores',

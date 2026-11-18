@@ -106,4 +106,17 @@ void main() {
     expect(_comoBia.podeEditarRecorrencia(fixo(_contaAna)), isFalse);
     expect(_comoAna.podeEditarRecorrencia(fixo(_contaBia)), isTrue);
   });
+
+  test('Tarefa: só quem criou ou o admin edita/exclui', () {
+    Tarefa tarefa(String? criadoPor) => Tarefa(
+          id: 't',
+          casaId: 'c',
+          titulo: 'Lavar a louça',
+          proxima: DateTime(2026, 11, 18),
+          criadoPor: criadoPor,
+        );
+    expect(_comoBia.podeEditarTarefa(tarefa(_contaBia)), isTrue);
+    expect(_comoBia.podeEditarTarefa(tarefa(_contaAna)), isFalse);
+    expect(_comoAna.podeEditarTarefa(tarefa(_contaBia)), isTrue);
+  });
 }

@@ -10,6 +10,7 @@ import 'local_db.dart';
 import 'modelos.dart';
 import 'permissoes.dart';
 import 'recorrentes.dart';
+import 'rodizio.dart';
 import 'sync_service.dart';
 
 export 'modelos.dart';
@@ -47,6 +48,8 @@ class AppData extends ChangeNotifier {
   List<Gasto> _gastos = [];
   List<Pagamento> _pagamentos = [];
   List<Recorrencia> _recorrencias = [];
+  List<Tarefa> _tarefas = [];
+  List<TarefaFeita> _feitas = [];
 
   /// Mensagem para mostrar quando o usuário sai ou é removido da casa
   /// (a tela lê e limpa).
@@ -93,6 +96,36 @@ class AppData extends ChangeNotifier {
     }
     return null;
   }
+
+  /// Tarefas por fazer (não concluídas), da mais urgente para a mais longe.
+  List<Tarefa> get tarefas =>
+      _tarefas.where((t) => !t.deleted && !t.concluida).toList()
+        ..sort((a, b) {
+          final c = a.proxima.compareTo(b.proxima);
+          return c != 0 ? c : a.titulo.compareTo(b.titulo);
+        });
+
+  /// As minhas: a vez é minha, ou é de "qualquer pessoa".
+  List<Tarefa> get minhasTarefas => tarefas
+      .where((t) => t.responsavelId == null || t.responsavelId == euId)
+      .toList();
+
+  /// Minhas tarefas de hoje e as atrasadas (para o Início).
+  List<Tarefa> get minhasTarefasDeHoje {
+    final hoje = DateTime.now();
+    return minhasTarefas.where((t) {
+      final s = Rodizio.situacao(t, hoje);
+      return s == SituacaoTarefa.hoje || s == SituacaoTarefa.atrasada;
+    }).toList();
+  }
+
+  /// Histórico: o que foi feito, do mais recente para o mais antigo.
+  List<TarefaFeita> get tarefasFeitas =>
+      _feitas.where((f) => !f.deleted).toList()
+        ..sort((a, b) => b.feitaEm.compareTo(a.feitaEm));
+
+  Map<String, int> placarDoMes([DateTime? mes]) =>
+      Rodizio.placarDoMes(_feitas, mes ?? DateTime.now());
 
   /// Pagamentos ativos, do mais recente para o mais antigo.
   List<Pagamento> get pagamentos =>
@@ -220,6 +253,8 @@ class AppData extends ChangeNotifier {
       _gastos = [];
       _pagamentos = [];
       _recorrencias = [];
+      _tarefas = [];
+      _feitas = [];
     } else {
       final args = [casa!.id];
       _moradores =
@@ -237,6 +272,14 @@ class AppData extends ChangeNotifier {
       _recorrencias = (await db.query('recorrencias',
               where: 'casa_id = ?', whereArgs: args))
           .map(Recorrencia.fromMap)
+          .toList();
+      _tarefas =
+          (await db.query('tarefas', where: 'casa_id = ?', whereArgs: args))
+              .map(Tarefa.fromMap)
+              .toList();
+      _feitas = (await db.query('tarefas_feitas',
+              where: 'casa_id = ?', whereArgs: args))
+          .map(TarefaFeita.fromMap)
           .toList();
 
       // O sync baixou o meu registro de morador como excluído: fui
@@ -266,6 +309,8 @@ class AppData extends ChangeNotifier {
     _gastos = [];
     _pagamentos = [];
     _recorrencias = [];
+    _tarefas = [];
+    _feitas = [];
     notifyListeners();
     try {
       await _sb.auth.signOut();
@@ -447,6 +492,56 @@ class AppData extends ChangeNotifier {
   bool podeExcluirAjuste(Gasto g) =>
       souAdmin && moradores.any((m) => m.id == g.pagoPorId);
 
+  // ---- Tarefas da casa ----
+
+  /// Cria ou altera uma tarefa (só quem criou ou o admin altera).
+  Future<void> salvarTarefa(Tarefa t) async {
+    for (final salva in _tarefas) {
+      if (salva.id == t.id && !permissoes.podeEditarTarefa(salva)) {
+        throw const AvisoApp(
+            'Só quem criou a tarefa ou o administrador pode alterá-la');
+      }
+    }
+    await _gravar('tarefas', t.toLocal());
+  }
+
+  Future<void> excluirTarefa(Tarefa t) async {
+    if (!permissoes.podeEditarTarefa(t)) {
+      throw const AvisoApp(
+          'Só quem criou a tarefa ou o administrador pode excluí-la');
+    }
+    await _gravar('tarefas', t.copia(deleted: true).toLocal());
+  }
+
+  /// Marca a vez atual como feita por MIM (qualquer morador pode, inclusive
+  /// cobrindo a vez de outra pessoa). Registra no histórico e passa a vez
+  /// / a data para a próxima. Retorna o que é preciso para desfazer.
+  Future<ConclusaoTarefa> concluirTarefa(Tarefa t) async {
+    final eu = meuMorador;
+    if (eu == null) throw const AvisoApp('Você não está nesta casa');
+    final feita = TarefaFeita(
+      id: Rodizio.idDaFeita(t.id, t.proxima),
+      casaId: t.casaId,
+      tarefaId: t.id,
+      titulo: t.titulo,
+      dataPrevista: t.proxima,
+      responsavelId: t.responsavelId,
+      feitaPorId: eu.id,
+      feitaEm: agoraIso(),
+    );
+    final depois = Rodizio.depoisDeFeita(t,
+        hoje: DateTime.now(), ativos: {for (final m in moradores) m.id});
+    await _gravar('tarefas_feitas', feita.toLocal());
+    await _gravar('tarefas', depois.toLocal());
+    return ConclusaoTarefa(antes: t, depois: depois, feita: feita);
+  }
+
+  /// Desfaz o "feita" que acabou de ser marcado.
+  Future<void> desfazerConclusao(ConclusaoTarefa c) async {
+    await _gravar('tarefas_feitas', c.feita.copiaExcluida().toLocal());
+    await _gravar('tarefas', c.antes.toLocal());
+  }
+
   // ---- PIX ----
 
   /// Salva (ou remove, com null) a MINHA chave PIX, já normalizada.
@@ -587,4 +682,13 @@ class AppData extends ChangeNotifier {
     _conferirPagamento(p.deId, p.paraId);
     await _gravar('pagamentos', p.copiaExcluida().toLocal());
   }
+}
+
+/// Resultado de marcar uma tarefa como feita (para poder desfazer).
+class ConclusaoTarefa {
+  final Tarefa antes;
+  final Tarefa depois;
+  final TarefaFeita feita;
+  const ConclusaoTarefa(
+      {required this.antes, required this.depois, required this.feita});
 }

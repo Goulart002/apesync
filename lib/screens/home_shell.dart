@@ -6,6 +6,7 @@ import '../theme.dart';
 import 'gastos_screen.dart';
 import 'inicio_screen.dart';
 import 'sobre_screen.dart';
+import 'tarefas_screen.dart';
 
 /// Tela "casca" com a barra de navegação inferior (Início | Gastos | Sobre).
 class HomeShell extends StatefulWidget {
@@ -64,19 +65,27 @@ class _HomeShellState extends State<HomeShell> {
         child: IndexedStack(
           index: _aba,
           children: [
-            InicioScreen(onVerTodos: () => _irPara(1)),
+            InicioScreen(
+                onVerTodos: () => _irPara(1), onVerTarefas: () => _irPara(2)),
             const GastosScreen(),
+            const TarefasScreen(),
             const SobreScreen(),
           ],
         ),
       ),
-      floatingActionButton: _aba == 2
-          ? null
-          : FloatingActionButton(
-              onPressed: _novoGasto,
-              tooltip: 'Novo gasto',
-              child: const Icon(Icons.add, size: 30),
-            ),
+      floatingActionButton: switch (_aba) {
+        3 => null,
+        2 => FloatingActionButton(
+            onPressed: () => Navigator.pushNamed(context, Rotas.novaTarefa),
+            tooltip: 'Nova tarefa',
+            child: const Icon(Icons.add_task, size: 28),
+          ),
+        _ => FloatingActionButton(
+            onPressed: _novoGasto,
+            tooltip: 'Novo gasto',
+            child: const Icon(Icons.add, size: 30),
+          ),
+      },
       bottomNavigationBar: Container(
         decoration: const BoxDecoration(
           border: Border(top: BorderSide(color: AppColors.border)),
@@ -94,6 +103,10 @@ class _HomeShellState extends State<HomeShell> {
                 selectedIcon:
                     Icon(Icons.receipt_long, color: AppColors.primary),
                 label: 'Gastos'),
+            NavigationDestination(
+                icon: Icon(Icons.task_alt_outlined),
+                selectedIcon: Icon(Icons.task_alt, color: AppColors.primary),
+                label: 'Tarefas'),
             NavigationDestination(
                 icon: Icon(Icons.info_outline),
                 selectedIcon: Icon(Icons.info, color: AppColors.primary),

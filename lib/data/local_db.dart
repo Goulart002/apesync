@@ -16,7 +16,39 @@ class LocalDb {
     'recorrencias',
     'gastos',
     'pagamentos',
+    'tarefas',
+    'tarefas_feitas',
   ];
+
+  static const _tabelaTarefas = '''CREATE TABLE tarefas (
+      id TEXT PRIMARY KEY,
+      casa_id TEXT NOT NULL,
+      titulo TEXT NOT NULL,
+      tipo TEXT NOT NULL,
+      responsavel_id TEXT,
+      rodizio TEXT NOT NULL,
+      repeticao TEXT NOT NULL,
+      dias_semana TEXT NOT NULL,
+      dia_mes INTEGER,
+      proxima TEXT NOT NULL,
+      concluida INTEGER NOT NULL DEFAULT 0,
+      criado_por TEXT,
+      updated_at TEXT NOT NULL,
+      deleted INTEGER NOT NULL DEFAULT 0,
+      pendente INTEGER NOT NULL DEFAULT 0)''';
+
+  static const _tabelaTarefasFeitas = '''CREATE TABLE tarefas_feitas (
+      id TEXT PRIMARY KEY,
+      casa_id TEXT NOT NULL,
+      tarefa_id TEXT NOT NULL,
+      titulo TEXT NOT NULL,
+      data_prevista TEXT NOT NULL,
+      responsavel_id TEXT,
+      feita_por TEXT NOT NULL,
+      feita_em TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted INTEGER NOT NULL DEFAULT 0,
+      pendente INTEGER NOT NULL DEFAULT 0)''';
 
   static const _tabelaRecorrencias = '''CREATE TABLE recorrencias (
       id TEXT PRIMARY KEY,
@@ -69,6 +101,8 @@ class LocalDb {
       deleted INTEGER NOT NULL DEFAULT 0,
       pendente INTEGER NOT NULL DEFAULT 0)''',
     _tabelaRecorrencias,
+    _tabelaTarefas,
+    _tabelaTarefasFeitas,
     '''CREATE TABLE pagamentos (
       id TEXT PRIMARY KEY,
       casa_id TEXT NOT NULL,
@@ -90,7 +124,7 @@ class LocalDb {
     final caminho = p.join(await getDatabasesPath(), 'apesync_$usuarioId.db');
     return openDatabase(
       caminho,
-      version: 3,
+      version: 4,
       onCreate: (db, _) async {
         for (final sql in _schema) {
           await db.execute(sql);
@@ -109,6 +143,11 @@ class LocalDb {
           await db.execute('ALTER TABLE moradores ADD COLUMN chave_pix TEXT');
           await db.execute('ALTER TABLE gastos ADD COLUMN recorrencia_id TEXT');
           await db.execute(_tabelaRecorrencias);
+        }
+        if (de < 4) {
+          // v4: tarefas da casa e histórico.
+          await db.execute(_tabelaTarefas);
+          await db.execute(_tabelaTarefasFeitas);
         }
       },
     );
@@ -137,28 +176,44 @@ class LocalDb {
   // ---------------- conversão local <-> Supabase ----------------
 
   /// Linha do SQLite -> JSON para o Supabase.
+  /// Colunas que no Supabase são listas (arrays) e no SQLite viram JSON.
+  static const _listas = {
+    'gastos': ['dividido_entre'],
+    'recorrencias': ['dividido_entre'],
+    'tarefas': ['rodizio', 'dias_semana'],
+  };
+
+  /// Colunas sim/não (no Supabase boolean, no SQLite 0/1). `deleted` vale
+  /// para todas as tabelas.
+  static const _simNao = {
+    'recorrencias': ['ativo'],
+    'tarefas': ['concluida'],
+  };
+
   static Map<String, Object?> paraRemoto(
       String tabela, Map<String, Object?> l) {
     final r = Map<String, Object?>.from(l)..remove('pendente');
-    r['deleted'] = l['deleted'] == 1;
     // Linha antiga (antes do administrador): deixa o servidor decidir.
     if (tabela == 'casas' && r['admin_id'] == null) r.remove('admin_id');
-    if (tabela == 'gastos' || tabela == 'recorrencias') {
-      r['dividido_entre'] = jsonDecode(l['dividido_entre'] as String);
+    for (final c in _listas[tabela] ?? const <String>[]) {
+      r[c] = jsonDecode(l[c] as String);
     }
-    if (tabela == 'recorrencias') r['ativo'] = l['ativo'] == 1;
+    for (final c in ['deleted', ...?_simNao[tabela]]) {
+      r[c] = l[c] == 1;
+    }
     return r;
   }
 
   /// JSON do Supabase -> linha do SQLite (já sincronizada).
   static Map<String, Object?> deRemoto(String tabela, Map<String, dynamic> r) {
     final l = Map<String, Object?>.from(r)..remove('synced_at');
-    l['deleted'] = r['deleted'] == true ? 1 : 0;
     l['pendente'] = 0;
-    if (tabela == 'gastos' || tabela == 'recorrencias') {
-      l['dividido_entre'] = jsonEncode(r['dividido_entre']);
+    for (final c in _listas[tabela] ?? const <String>[]) {
+      l[c] = jsonEncode(r[c]);
     }
-    if (tabela == 'recorrencias') l['ativo'] = r['ativo'] == true ? 1 : 0;
+    for (final c in ['deleted', ...?_simNao[tabela]]) {
+      l[c] = r[c] == true ? 1 : 0;
+    }
     return l;
   }
 

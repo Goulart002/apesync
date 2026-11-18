@@ -68,7 +68,7 @@ class SobreScreen extends StatelessWidget {
                   'Saldo automático', 'Quem deve e quem recebe'),
               Divider(height: 1, color: AppColors.divider),
               _Recurso(Icons.task_alt, AppColors.blue, AppColors.blueLight,
-                  'Tarefas da casa', 'Rodízio de limpeza · em breve'),
+                  'Tarefas da casa', 'Rodízio de tarefas e placar do mês'),
             ],
           ),
         ),

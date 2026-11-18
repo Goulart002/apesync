@@ -109,6 +109,48 @@ create index if not exists recorrencias_casa_idx on public.recorrencias (casa_id
 
 alter table public.gastos add column if not exists recorrencia_id uuid;
 
+-- Tarefas da casa (faxina, louça, lixo, compras...). Podem ser avulsas ou
+-- repetidas (todo dia, dias da semana, todo mês), com rodízio: ao marcar
+-- como feita, a vez passa para o próximo da lista `rodizio`.
+create table if not exists public.tarefas (
+  id              uuid primary key,
+  casa_id         uuid not null references public.casas (id),
+  titulo          text not null check (char_length(titulo) between 1 and 60),
+  tipo            text not null default 'outros'
+                  check (tipo in ('faxina','louca','lixo','compras','roupa','outros')),
+  responsavel_id  uuid references public.moradores (id),  -- null = qualquer pessoa
+  rodizio         uuid[] not null default '{}',           -- ordem da vez
+  repeticao       text not null default 'nenhuma'
+                  check (repeticao in ('nenhuma','diaria','semanal','mensal')),
+  dias_semana     smallint[] not null default '{}',       -- 1 = segunda ... 7 = domingo
+  dia_mes         smallint check (dia_mes between 1 and 31),
+  proxima         date not null,                          -- quando é a próxima vez
+  concluida       boolean not null default false,         -- só tarefa avulsa
+  criado_por      uuid references auth.users (id),
+  updated_at      timestamptz not null default now(),
+  deleted         boolean not null default false,
+  synced_at       timestamptz not null default now()
+);
+create index if not exists tarefas_casa_idx on public.tarefas (casa_id, synced_at);
+
+-- Histórico: cada vez que uma tarefa foi feita (e por quem). O id é
+-- calculado a partir da tarefa + data prevista, então a mesma vez não conta
+-- duas vezes mesmo se duas pessoas marcarem ao mesmo tempo.
+create table if not exists public.tarefas_feitas (
+  id              uuid primary key,
+  casa_id         uuid not null references public.casas (id),
+  tarefa_id       uuid not null,
+  titulo          text not null check (char_length(titulo) between 1 and 60),
+  data_prevista   date not null,
+  responsavel_id  uuid references public.moradores (id),  -- de quem era a vez
+  feita_por       uuid not null references public.moradores (id),
+  feita_em        timestamptz not null,
+  updated_at      timestamptz not null default now(),
+  deleted         boolean not null default false,
+  synced_at       timestamptz not null default now()
+);
+create index if not exists tarefas_feitas_casa_idx on public.tarefas_feitas (casa_id, synced_at);
+
 -- ---------------------------------------------------------------------
 -- 2) Triggers
 -- ---------------------------------------------------------------------
@@ -124,7 +166,7 @@ end $$;
 do $$
 declare t text;
 begin
-  foreach t in array array['casas','moradores','recorrencias','gastos','pagamentos'] loop
+  foreach t in array array['casas','moradores','recorrencias','gastos','pagamentos','tarefas','tarefas_feitas'] loop
     execute format('drop trigger if exists trg_synced_at on public.%I', t);
     execute format(
       'create trigger trg_synced_at before insert or update on public.%I
@@ -223,7 +265,7 @@ end $$;
 do $$
 declare t text;
 begin
-  foreach t in array array['casas','moradores','recorrencias','gastos','pagamentos'] loop
+  foreach t in array array['casas','moradores','recorrencias','gastos','pagamentos','tarefas','tarefas_feitas'] loop
     execute format('drop trigger if exists trg_0_mais_recente on public.%I', t);
     execute format(
       'create trigger trg_0_mais_recente before insert or update on public.%I
@@ -269,6 +311,65 @@ end $$;
 drop trigger if exists trg_validar_moradores on public.pagamentos;
 create trigger trg_validar_moradores before insert or update on public.pagamentos
   for each row execute function public.validar_moradores_pagamento();
+
+-- Tarefa: o responsável e quem está no rodízio são moradores desta casa.
+create or replace function public.validar_moradores_tarefa()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if exists (select 1 from unnest(array_append(new.rodizio, new.responsavel_id)) as d(id)
+              where d.id is not null and not exists (
+                select 1 from public.moradores m
+                 where m.id = d.id and m.casa_id = new.casa_id)) then
+    raise exception 'A tarefa cita alguém que não é morador desta casa';
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists trg_validar_moradores on public.tarefas;
+create trigger trg_validar_moradores before insert or update on public.tarefas
+  for each row execute function public.validar_moradores_tarefa();
+
+create or replace function public.validar_moradores_tarefa_feita()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from public.moradores
+                  where id = new.feita_por and casa_id = new.casa_id)
+     or (new.responsavel_id is not null and not exists (
+           select 1 from public.moradores
+            where id = new.responsavel_id and casa_id = new.casa_id)) then
+    raise exception 'Quem fez a tarefa precisa ser morador desta casa';
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists trg_validar_moradores on public.tarefas_feitas;
+create trigger trg_validar_moradores before insert or update on public.tarefas_feitas
+  for each row execute function public.validar_moradores_tarefa_feita();
+
+-- Tarefa: não muda de casa nem de autor. Quem não criou a tarefa (e não é
+-- admin) só consegue MARCAR COMO FEITA: muda a próxima data, a vez do
+-- rodízio e "concluída"; o resto (nome, repetição, rodízio...) fica como
+-- estava e ele não consegue excluir.
+create or replace function public.proteger_tarefa()
+returns trigger language plpgsql as $$
+begin
+  new.casa_id := old.casa_id;
+  new.criado_por := old.criado_por;
+  if old.criado_por is distinct from auth.uid() and not public.eh_admin(old.casa_id) then
+    new.titulo := old.titulo;
+    new.tipo := old.tipo;
+    new.rodizio := old.rodizio;
+    new.repeticao := old.repeticao;
+    new.dias_semana := old.dias_semana;
+    new.dia_mes := old.dia_mes;
+    new.deleted := old.deleted;
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists trg_proteger_tarefa on public.tarefas;
+create trigger trg_proteger_tarefa before update on public.tarefas
+  for each row execute function public.proteger_tarefa();
 
 -- ---------------------------------------------------------------------
 -- 3) Segurança (Row Level Security)
@@ -316,13 +417,15 @@ alter table public.moradores  enable row level security;
 alter table public.gastos     enable row level security;
 alter table public.pagamentos enable row level security;
 alter table public.recorrencias enable row level security;
+alter table public.tarefas enable row level security;
+alter table public.tarefas_feitas enable row level security;
 
 -- Apaga as policies antigas (versão sem administrador) e as atuais,
 -- para recriar logo abaixo.
 do $$
 declare t text; op text;
 begin
-  foreach t in array array['casas','moradores','recorrencias','gastos','pagamentos'] loop
+  foreach t in array array['casas','moradores','recorrencias','gastos','pagamentos','tarefas','tarefas_feitas'] loop
     foreach op in array array['select','insert','update','delete'] loop
       execute format('drop policy if exists %I on public.%I', t || '_' || op, t);
     end loop;
@@ -383,6 +486,29 @@ create policy recorrencias_insert on public.recorrencias for insert
 create policy recorrencias_update on public.recorrencias for update
   using (public.eh_membro(casa_id)
          and (criado_por = auth.uid() or public.eh_admin(casa_id)))
+  with check (public.eh_membro(casa_id));
+
+-- Tarefas: qualquer morador cria e marca como feita; editar e excluir só
+-- quem criou ou o admin (garantido pelo trigger proteger_tarefa).
+create policy tarefas_select on public.tarefas for select
+  using (public.eh_membro(casa_id));
+create policy tarefas_insert on public.tarefas for insert
+  with check (public.eh_membro(casa_id)
+              and (criado_por = auth.uid() or public.eh_admin(casa_id)
+                   or exists (select 1 from public.tarefas t where t.id = tarefas.id)));
+create policy tarefas_update on public.tarefas for update
+  using (public.eh_membro(casa_id))
+  with check (public.eh_membro(casa_id));
+
+-- Histórico: cada um registra o que ELE fez (o admin pode corrigir).
+create policy tarefas_feitas_select on public.tarefas_feitas for select
+  using (public.eh_membro(casa_id));
+create policy tarefas_feitas_insert on public.tarefas_feitas for insert
+  with check (public.eh_membro(casa_id)
+              and (public.eh_meu_morador(feita_por) or public.eh_admin(casa_id)));
+create policy tarefas_feitas_update on public.tarefas_feitas for update
+  using (public.eh_membro(casa_id)
+         and (public.eh_meu_morador(feita_por) or public.eh_admin(casa_id)))
   with check (public.eh_membro(casa_id));
 
 -- Pagamentos: quem paga, quem recebe ou o admin.
@@ -479,7 +605,7 @@ grant execute on function public.eh_meu_morador(uuid) to authenticated;
 do $$
 declare t text;
 begin
-  foreach t in array array['casas','moradores','recorrencias','gastos','pagamentos'] loop
+  foreach t in array array['casas','moradores','recorrencias','gastos','pagamentos','tarefas','tarefas_feitas'] loop
     if not exists (select 1 from pg_publication_tables
                     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t) then
       execute format('alter publication supabase_realtime add table public.%I', t);

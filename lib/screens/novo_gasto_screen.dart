@@ -53,6 +53,11 @@ class _NovoGastoScreenState extends State<NovoGastoScreen> {
     if (_carregou) return;
     _carregou = true;
     final arg = ModalRoute.of(context)?.settings.arguments;
+    if (arg is GastoRascunho) {
+      // Gasto novo já com descrição e categoria (ex.: tarefa de compras).
+      _descricao.text = arg.descricao;
+      _categoria = arg.categoria;
+    }
     if (arg is Gasto) {
       _editando = arg;
       // Ajuste (dívida de quem foi removido): nunca é editado; o admin só
