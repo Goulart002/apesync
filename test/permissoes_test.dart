@@ -88,4 +88,22 @@ void main() {
     expect(_comoAna.podeTornarAdmin(_ana), isFalse);
     expect(_comoBia.podeTornarAdmin(_ana), isFalse);
   });
+
+  test('Gasto fixo: só quem criou ou o admin altera', () {
+    Recorrencia fixo(String? criadoPor) => Recorrencia(
+          id: 'r',
+          casaId: 'c',
+          descricao: 'Internet',
+          valorCentavos: 10000,
+          categoria: Categoria.contas,
+          pagoPorId: 'bia',
+          divididoEntre: const ['ana', 'bia'],
+          dia: 10,
+          inicio: '2026-11',
+          criadoPor: criadoPor,
+        );
+    expect(_comoBia.podeEditarRecorrencia(fixo(_contaBia)), isTrue);
+    expect(_comoBia.podeEditarRecorrencia(fixo(_contaAna)), isFalse);
+    expect(_comoAna.podeEditarRecorrencia(fixo(_contaBia)), isTrue);
+  });
 }

@@ -37,6 +37,9 @@ class Permissoes {
   bool podeEditarGasto(Gasto g) =>
       souAdmin || (g.criadoPor != null && g.criadoPor == usuarioId);
 
+  bool podeEditarRecorrencia(Recorrencia r) =>
+      souAdmin || (r.criadoPor != null && r.criadoPor == usuarioId);
+
   bool podeMexerNoPagamento(String deId, String paraId) =>
       souAdmin || deId == euMoradorId || paraId == euMoradorId;
 

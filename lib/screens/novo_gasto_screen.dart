@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../data/app_data.dart';
+import '../data/recorrentes.dart';
 import '../services/nota_scanner.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
@@ -35,6 +36,9 @@ class _NovoGastoScreenState extends State<NovoGastoScreen> {
   bool _podeExcluir = false;
   bool _carregou = false;
   bool _salvando = false;
+
+  /// "Repetir todo mês" (só ao criar): vira um gasto fixo.
+  bool _repetir = false;
 
   @override
   void initState() {
@@ -145,18 +149,39 @@ class _NovoGastoScreenState extends State<NovoGastoScreen> {
       ..._data.moradores.map((m) => m.id).where(_divididoEntre.contains),
       ..._divididoEntre.where((id) => !_data.moradores.any((m) => m.id == id)),
     ];
+    final hoje = DateTime.now();
+    final noFuturo = _dia.isAfter(DateTime(hoje.year, hoje.month, hoje.day));
     try {
-      await _data.salvarGasto(Gasto(
-        id: editando?.id ?? _data.novoId(), // mesmo id = UPDATE; novo = INSERT
-        casaId: _data.casa!.id,
-        descricao: _descricao.text.trim(),
-        valorCentavos: _valorCentavos,
-        categoria: _categoria,
-        pagoPorId: _pagoPor,
-        divididoEntre: ordem,
-        data: _dia,
-        criadoPor: editando?.criadoPor ?? _data.usuarioId,
-      ));
+      if (editando == null && _repetir) {
+        // Gasto fixo: o app lança este mês (se o dia já chegou) e os
+        // próximos, sempre no mesmo dia.
+        await _data.salvarRecorrencia(Recorrencia(
+          id: _data.novoId(),
+          casaId: _data.casa!.id,
+          descricao: _descricao.text.trim(),
+          valorCentavos: _valorCentavos,
+          categoria: _categoria,
+          pagoPorId: _pagoPor,
+          divididoEntre: ordem,
+          dia: _dia.day,
+          inicio: Recorrentes.mes(_dia),
+          criadoPor: _data.usuarioId,
+        ));
+      } else {
+        await _data.salvarGasto(Gasto(
+          id: editando?.id ??
+              _data.novoId(), // mesmo id = UPDATE; novo = INSERT
+          casaId: _data.casa!.id,
+          descricao: _descricao.text.trim(),
+          valorCentavos: _valorCentavos,
+          categoria: _categoria,
+          pagoPorId: _pagoPor,
+          divididoEntre: ordem,
+          data: _dia,
+          criadoPor: editando?.criadoPor ?? _data.usuarioId,
+          recorrenciaId: editando?.recorrenciaId,
+        ));
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() => _salvando = false);
@@ -168,6 +193,14 @@ class _NovoGastoScreenState extends State<NovoGastoScreen> {
     if (editando != null) {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Gasto atualizado')));
+    } else if (_repetir) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(noFuturo
+              ? 'Gasto fixo criado. O primeiro lançamento entra em '
+                  '${dataCurta(_dia)}, depois todo dia ${_dia.day}.'
+              : 'Gasto fixo criado: lançado este mês e todo dia ${_dia.day}.')));
+      Navigator.pop(context); // sem o aviso padrão de "gasto adicionado"
+      return;
     }
     Navigator.pop(context, true);
   }
@@ -511,7 +544,48 @@ class _NovoGastoScreenState extends State<NovoGastoScreen> {
                               ),
                             ],
                           ),
-                          const SizedBox(height: 18),
+                          const SizedBox(height: 12),
+
+                          // Gasto fixo
+                          if (_editando == null)
+                            SwitchListTile(
+                              contentPadding: EdgeInsets.zero,
+                              value: _repetir,
+                              onChanged: (v) => setState(() => _repetir = v),
+                              secondary: const Icon(Icons.repeat,
+                                  color: AppColors.primary),
+                              title: const Text('Repetir todo mês',
+                                  style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600)),
+                              subtitle: Text(
+                                  _repetir
+                                      ? 'Lançado sozinho todo dia ${_dia.day} '
+                                          '(aluguel, internet...)'
+                                      : 'Para contas fixas, como aluguel e internet',
+                                  style: const TextStyle(fontSize: 12)),
+                            )
+                          else if (_editando!.recorrenciaId != null)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 4),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.repeat,
+                                      size: 18, color: AppColors.muted),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Lançado pelo gasto fixo. Alterar aqui '
+                                      'muda só este mês; para os próximos, '
+                                      'use "Gastos fixos" na aba Gastos.',
+                                      style: const TextStyle(
+                                          fontSize: 12, color: AppColors.muted),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          const SizedBox(height: 6),
 
                           // Divisão
                           Row(

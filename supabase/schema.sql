@@ -80,6 +80,35 @@ create table if not exists public.pagamentos (
 );
 create index if not exists pagamentos_casa_idx on public.pagamentos (casa_id, synced_at);
 
+-- Chave PIX de cada morador (para pagar/cobrar nos acertos). Só a própria
+-- pessoa consegue mudar a dela (trigger proteger_morador).
+alter table public.moradores add column if not exists chave_pix text;
+alter table public.moradores drop constraint if exists moradores_chave_pix_check;
+alter table public.moradores add constraint moradores_chave_pix_check
+  check (chave_pix is null or char_length(chave_pix) between 1 and 77);
+
+-- Gastos fixos (aluguel, internet...): o app lança um gasto por mês, no
+-- dia escolhido. O gasto gerado guarda de qual gasto fixo ele veio.
+create table if not exists public.recorrencias (
+  id              uuid primary key,
+  casa_id         uuid not null references public.casas (id),
+  descricao       text not null check (char_length(descricao) between 1 and 80),
+  valor_centavos  integer not null check (valor_centavos > 0),
+  categoria       text not null check (categoria in ('mercado','contas','moradia','outros')),
+  pago_por        uuid not null references public.moradores (id),
+  dividido_entre  uuid[] not null check (cardinality(dividido_entre) > 0),
+  dia             smallint not null check (dia between 1 and 31),
+  inicio          text not null check (inicio ~ '^\d{4}-\d{2}$'),  -- primeiro mês (AAAA-MM)
+  ativo           boolean not null default true,
+  criado_por      uuid references auth.users (id),
+  updated_at      timestamptz not null default now(),
+  deleted         boolean not null default false,
+  synced_at       timestamptz not null default now()
+);
+create index if not exists recorrencias_casa_idx on public.recorrencias (casa_id, synced_at);
+
+alter table public.gastos add column if not exists recorrencia_id uuid;
+
 -- ---------------------------------------------------------------------
 -- 2) Triggers
 -- ---------------------------------------------------------------------
@@ -95,7 +124,7 @@ end $$;
 do $$
 declare t text;
 begin
-  foreach t in array array['casas','moradores','gastos','pagamentos'] loop
+  foreach t in array array['casas','moradores','recorrencias','gastos','pagamentos'] loop
     execute format('drop trigger if exists trg_synced_at on public.%I', t);
     execute format(
       'create trigger trg_synced_at before insert or update on public.%I
@@ -117,13 +146,19 @@ drop trigger if exists trg_casa_admin on public.casas;
 create trigger trg_casa_admin before insert on public.casas
   for each row execute function public.casa_admin_padrao();
 
--- Morador: não pode trocar de casa nem de dono (usuario_id), e o
--- administrador não pode sair sem antes transferir a administração.
+-- Morador: não pode trocar de casa nem de dono (usuario_id), só a própria
+-- pessoa muda a chave PIX dela (senão alguém poderia trocar pela sua e
+-- desviar pagamentos), e o administrador não pode sair sem antes
+-- transferir a administração.
 create or replace function public.proteger_morador()
 returns trigger language plpgsql as $$
 begin
   new.casa_id := old.casa_id;
   new.usuario_id := old.usuario_id;
+  if new.chave_pix is distinct from old.chave_pix
+     and old.usuario_id is distinct from auth.uid() then
+    new.chave_pix := old.chave_pix;
+  end if;
   if new.deleted and not old.deleted and old.usuario_id is not null and exists (
        select 1 from public.casas c
         where c.id = old.casa_id and c.admin_id = old.usuario_id) then
@@ -147,6 +182,11 @@ end $$;
 
 drop trigger if exists trg_proteger_gasto on public.gastos;
 create trigger trg_proteger_gasto before update on public.gastos
+  for each row execute function public.proteger_gasto();
+
+-- Gasto fixo: mesma regra (não muda de casa nem de autor).
+drop trigger if exists trg_proteger_gasto on public.recorrencias;
+create trigger trg_proteger_gasto before update on public.recorrencias
   for each row execute function public.proteger_gasto();
 
 -- Pagamento: não muda de casa depois de criado.
@@ -183,7 +223,7 @@ end $$;
 do $$
 declare t text;
 begin
-  foreach t in array array['casas','moradores','gastos','pagamentos'] loop
+  foreach t in array array['casas','moradores','recorrencias','gastos','pagamentos'] loop
     execute format('drop trigger if exists trg_0_mais_recente on public.%I', t);
     execute format(
       'create trigger trg_0_mais_recente before insert or update on public.%I
@@ -210,6 +250,10 @@ end $$;
 
 drop trigger if exists trg_validar_moradores on public.gastos;
 create trigger trg_validar_moradores before insert or update on public.gastos
+  for each row execute function public.validar_moradores_gasto();
+
+drop trigger if exists trg_validar_moradores on public.recorrencias;
+create trigger trg_validar_moradores before insert or update on public.recorrencias
   for each row execute function public.validar_moradores_gasto();
 
 create or replace function public.validar_moradores_pagamento()
@@ -271,13 +315,14 @@ alter table public.casas      enable row level security;
 alter table public.moradores  enable row level security;
 alter table public.gastos     enable row level security;
 alter table public.pagamentos enable row level security;
+alter table public.recorrencias enable row level security;
 
 -- Apaga as policies antigas (versão sem administrador) e as atuais,
 -- para recriar logo abaixo.
 do $$
 declare t text; op text;
 begin
-  foreach t in array array['casas','moradores','gastos','pagamentos'] loop
+  foreach t in array array['casas','moradores','recorrencias','gastos','pagamentos'] loop
     foreach op in array array['select','insert','update','delete'] loop
       execute format('drop policy if exists %I on public.%I', t || '_' || op, t);
     end loop;
@@ -325,6 +370,17 @@ create policy gastos_insert on public.gastos for insert
   with check (public.eh_membro(casa_id)
               and (criado_por = auth.uid() or public.eh_admin(casa_id)));
 create policy gastos_update on public.gastos for update
+  using (public.eh_membro(casa_id)
+         and (criado_por = auth.uid() or public.eh_admin(casa_id)))
+  with check (public.eh_membro(casa_id));
+
+-- Gastos fixos: mesmas regras dos gastos (quem criou ou o admin altera).
+create policy recorrencias_select on public.recorrencias for select
+  using (public.eh_membro(casa_id));
+create policy recorrencias_insert on public.recorrencias for insert
+  with check (public.eh_membro(casa_id)
+              and (criado_por = auth.uid() or public.eh_admin(casa_id)));
+create policy recorrencias_update on public.recorrencias for update
   using (public.eh_membro(casa_id)
          and (criado_por = auth.uid() or public.eh_admin(casa_id)))
   with check (public.eh_membro(casa_id));
@@ -423,7 +479,7 @@ grant execute on function public.eh_meu_morador(uuid) to authenticated;
 do $$
 declare t text;
 begin
-  foreach t in array array['casas','moradores','gastos','pagamentos'] loop
+  foreach t in array array['casas','moradores','recorrencias','gastos','pagamentos'] loop
     if not exists (select 1 from pg_publication_tables
                     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t) then
       execute format('alter publication supabase_realtime add table public.%I', t);

@@ -9,6 +9,7 @@ import 'calculos.dart';
 import 'local_db.dart';
 import 'modelos.dart';
 import 'permissoes.dart';
+import 'recorrentes.dart';
 import 'sync_service.dart';
 
 export 'modelos.dart';
@@ -45,6 +46,7 @@ class AppData extends ChangeNotifier {
   List<Morador> _moradores = [];
   List<Gasto> _gastos = [];
   List<Pagamento> _pagamentos = [];
+  List<Recorrencia> _recorrencias = [];
 
   /// Mensagem para mostrar quando o usuário sai ou é removido da casa
   /// (a tela lê e limpa).
@@ -76,6 +78,21 @@ class AppData extends ChangeNotifier {
       final c = b.data.compareTo(a.data);
       return c != 0 ? c : b.updatedAt.compareTo(a.updatedAt);
     });
+
+  /// Gastos fixos (ativos e pausados), por dia do mês.
+  List<Recorrencia> get recorrencias =>
+      _recorrencias.where((r) => !r.deleted).toList()
+        ..sort((a, b) {
+          final c = a.dia.compareTo(b.dia);
+          return c != 0 ? c : a.descricao.compareTo(b.descricao);
+        });
+
+  Recorrencia? recorrencia(String? id) {
+    for (final r in _recorrencias) {
+      if (r.id == id) return r;
+    }
+    return null;
+  }
 
   /// Pagamentos ativos, do mais recente para o mais antigo.
   List<Pagamento> get pagamentos =>
@@ -187,6 +204,7 @@ class AppData extends ChangeNotifier {
     _uid = user.id;
     _db = await LocalDb.abrir(user.id);
     await recarregar();
+    await gerarRecorrentes(); // gastos fixos do mês, mesmo offline
     SyncService.instance.iniciar();
   }
 
@@ -201,6 +219,7 @@ class AppData extends ChangeNotifier {
       _moradores = [];
       _gastos = [];
       _pagamentos = [];
+      _recorrencias = [];
     } else {
       final args = [casa!.id];
       _moradores =
@@ -215,6 +234,10 @@ class AppData extends ChangeNotifier {
           (await db.query('pagamentos', where: 'casa_id = ?', whereArgs: args))
               .map(Pagamento.fromMap)
               .toList();
+      _recorrencias = (await db.query('recorrencias',
+              where: 'casa_id = ?', whereArgs: args))
+          .map(Recorrencia.fromMap)
+          .toList();
 
       // O sync baixou o meu registro de morador como excluído: fui
       // removido pelo administrador. Limpa a casa do celular.
@@ -242,6 +265,7 @@ class AppData extends ChangeNotifier {
     _moradores = [];
     _gastos = [];
     _pagamentos = [];
+    _recorrencias = [];
     notifyListeners();
     try {
       await _sb.auth.signOut();
@@ -422,6 +446,81 @@ class AppData extends ChangeNotifier {
   /// casa (senão a dívida voltaria para alguém que não está mais na lista).
   bool podeExcluirAjuste(Gasto g) =>
       souAdmin && moradores.any((m) => m.id == g.pagoPorId);
+
+  // ---- PIX ----
+
+  /// Salva (ou remove, com null) a MINHA chave PIX, já normalizada.
+  Future<void> salvarMinhaChavePix(String? chave) async {
+    final eu = meuMorador;
+    if (eu == null) return;
+    await _gravar('moradores', eu.comChavePix(chave).toLocal());
+  }
+
+  // ---- Gastos fixos ----
+
+  void _conferirRecorrencia(Recorrencia r) {
+    for (final salva in _recorrencias) {
+      if (salva.id == r.id && !permissoes.podeEditarRecorrencia(salva)) {
+        throw const AvisoApp(
+            'Só quem criou o gasto fixo ou o administrador pode alterá-lo');
+      }
+    }
+  }
+
+  /// Cria ou altera um gasto fixo e já lança os meses que venceram.
+  Future<void> salvarRecorrencia(Recorrencia r) async {
+    _conferirRecorrencia(r);
+    await _gravar('recorrencias', r.toLocal());
+    await gerarRecorrentes();
+  }
+
+  /// Pausa ou retoma. Ao retomar, começa a contar do mês atual (não lança
+  /// os meses em que ficou pausado).
+  Future<void> pausarRecorrencia(Recorrencia r, {required bool pausar}) =>
+      salvarRecorrencia(pausar
+          ? r.copia(ativo: false)
+          : r.copia(ativo: true, inicio: Recorrentes.mes(DateTime.now())));
+
+  /// Exclui o gasto fixo. Os gastos que ele já lançou continuam.
+  Future<void> excluirRecorrencia(Recorrencia r) async {
+    _conferirRecorrencia(r);
+    await _gravar('recorrencias', r.copia(deleted: true).toLocal());
+  }
+
+  bool _gerando = false;
+
+  /// Lança os gastos fixos dos meses que já venceram e ainda não estão no
+  /// celular. Só o celular de quem criou o gasto fixo (ou do admin) lança:
+  /// o gasto sai com o mesmo autor do gasto fixo. Ids e datas são
+  /// determinísticos, então dois celulares lançando o mesmo mês não
+  /// duplicam nada. Retorna true se lançou algum.
+  Future<bool> gerarRecorrentes() async {
+    final db = _db;
+    final c = casa;
+    if (db == null || c == null || _gerando) return false;
+    _gerando = true;
+    try {
+      final hoje = DateTime.now();
+      final existentes = {for (final g in _gastos) g.id};
+      var gerou = false;
+      for (final r in _recorrencias) {
+        if (!permissoes.podeEditarRecorrencia(r)) continue;
+        for (final venc in Recorrentes.vencimentosAte(r, hoje)) {
+          final g = Recorrentes.gastoDoMes(r, venc);
+          if (existentes.contains(g.id)) continue;
+          // Sem _gravar: mantém a data de alteração determinística.
+          await db.insert('gastos', g.toLocal()..['pendente'] = 1,
+              conflictAlgorithm: ConflictAlgorithm.ignore);
+          existentes.add(g.id);
+          gerou = true;
+        }
+      }
+      if (gerou) await recarregar();
+      return gerou;
+    } finally {
+      _gerando = false;
+    }
+  }
 
   // ---- Gastos ----
 

@@ -5,6 +5,7 @@ import 'package:share_plus/share_plus.dart';
 import '../data/app_data.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import '../widgets/pix_widgets.dart';
 import 'fluxo.dart';
 
 /// Moradores da casa, convite e administração.
@@ -382,10 +383,21 @@ class MoradoresScreen extends StatelessWidget {
           ],
         ],
       ),
-      subtitle: Text(subtitulo, style: const TextStyle(fontSize: 12)),
+      subtitle: Text(
+          m.temConta
+              ? '$subtitulo · ${m.chavePix != null ? 'PIX cadastrado' : 'sem PIX'}'
+              : subtitulo,
+          style: const TextStyle(fontSize: 12)),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (souEu)
+            IconButton(
+              tooltip: 'Minha chave PIX',
+              icon: Icon(Icons.pix,
+                  color: m.chavePix != null ? AppColors.primary : null),
+              onPressed: () => editarMinhaChavePix(context),
+            ),
           if (perm.podeEditarMorador(m))
             IconButton(
               tooltip: 'Editar nome',

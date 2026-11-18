@@ -155,6 +155,10 @@ class Morador {
   final String nome;
   final int cor;
   final String? usuarioId;
+
+  /// Chave PIX já normalizada (ver Pix.normalizar). Só a própria pessoa
+  /// muda a dela.
+  final String? chavePix;
   final String updatedAt;
   final bool deleted;
 
@@ -164,6 +168,7 @@ class Morador {
     required this.nome,
     this.cor = 0,
     this.usuarioId,
+    this.chavePix,
     required this.updatedAt,
     this.deleted = false,
   });
@@ -178,8 +183,21 @@ class Morador {
         nome: nome ?? this.nome,
         cor: cor,
         usuarioId: usuarioId,
+        chavePix: chavePix,
         updatedAt: updatedAt,
         deleted: deleted ?? this.deleted,
+      );
+
+  /// Mesma pessoa com outra chave PIX (null = remove a chave).
+  Morador comChavePix(String? chave) => Morador(
+        id: id,
+        casaId: casaId,
+        nome: nome,
+        cor: cor,
+        usuarioId: usuarioId,
+        chavePix: chave,
+        updatedAt: updatedAt,
+        deleted: deleted,
       );
 
   factory Morador.fromMap(Map<String, Object?> m) => Morador(
@@ -188,6 +206,7 @@ class Morador {
         nome: m['nome'] as String,
         cor: (m['cor'] as num?)?.toInt() ?? 0,
         usuarioId: m['usuario_id'] as String?,
+        chavePix: m['chave_pix'] as String?,
         updatedAt: m['updated_at'] as String,
         deleted: _lerBool(m['deleted']),
       );
@@ -198,6 +217,7 @@ class Morador {
         'nome': nome,
         'cor': cor,
         'usuario_id': usuarioId,
+        'chave_pix': chavePix,
         'updated_at': updatedAt,
         'deleted': deleted ? 1 : 0,
       };
@@ -213,6 +233,9 @@ class Gasto {
   final List<String> divididoEntre;
   final DateTime data;
   final String? criadoPor;
+
+  /// Gasto fixo que gerou este gasto (null = lançado à mão).
+  final String? recorrenciaId;
   final String updatedAt;
   final bool deleted;
 
@@ -226,6 +249,7 @@ class Gasto {
     required this.divididoEntre,
     required this.data,
     this.criadoPor,
+    this.recorrenciaId,
     this.updatedAt = '',
     this.deleted = false,
   });
@@ -251,6 +275,7 @@ class Gasto {
         divididoEntre: divididoEntre,
         data: data,
         criadoPor: criadoPor,
+        recorrenciaId: recorrenciaId,
         deleted: true,
       );
 
@@ -269,6 +294,7 @@ class Gasto {
       divididoEntre: lista,
       data: lerData(m['data'] as String),
       criadoPor: m['criado_por'] as String?,
+      recorrenciaId: m['recorrencia_id'] as String?,
       updatedAt: m['updated_at'] as String,
       deleted: _lerBool(m['deleted']),
     );
@@ -283,6 +309,102 @@ class Gasto {
         'pago_por': pagoPorId,
         'dividido_entre': jsonEncode(divididoEntre),
         'data': dataIso(data),
+        'criado_por': criadoPor,
+        'recorrencia_id': recorrenciaId,
+        'updated_at': updatedAt,
+        'deleted': deleted ? 1 : 0,
+      };
+}
+
+/// Gasto fixo (aluguel, internet...): vira um [Gasto] por mês, no [dia]
+/// escolhido, a partir do mês [inicio] (AAAA-MM).
+class Recorrencia {
+  final String id;
+  final String casaId;
+  final String descricao;
+  final int valorCentavos;
+  final Categoria categoria;
+  final String pagoPorId;
+  final List<String> divididoEntre;
+  final int dia;
+  final String inicio;
+  final bool ativo;
+  final String? criadoPor;
+  final String updatedAt;
+  final bool deleted;
+
+  const Recorrencia({
+    required this.id,
+    required this.casaId,
+    required this.descricao,
+    required this.valorCentavos,
+    required this.categoria,
+    required this.pagoPorId,
+    required this.divididoEntre,
+    required this.dia,
+    required this.inicio,
+    this.ativo = true,
+    this.criadoPor,
+    this.updatedAt = '',
+    this.deleted = false,
+  });
+
+  Recorrencia copia({
+    String? descricao,
+    int? valorCentavos,
+    String? inicio,
+    bool? ativo,
+    bool? deleted,
+  }) =>
+      Recorrencia(
+        id: id,
+        casaId: casaId,
+        descricao: descricao ?? this.descricao,
+        valorCentavos: valorCentavos ?? this.valorCentavos,
+        categoria: categoria,
+        pagoPorId: pagoPorId,
+        divididoEntre: divididoEntre,
+        dia: dia,
+        inicio: inicio ?? this.inicio,
+        ativo: ativo ?? this.ativo,
+        criadoPor: criadoPor,
+        updatedAt: updatedAt,
+        deleted: deleted ?? this.deleted,
+      );
+
+  factory Recorrencia.fromMap(Map<String, Object?> m) {
+    final div = m['dividido_entre'];
+    final lista = div is String
+        ? (jsonDecode(div) as List).cast<String>()
+        : (div as List).cast<String>();
+    return Recorrencia(
+      id: m['id'] as String,
+      casaId: m['casa_id'] as String,
+      descricao: m['descricao'] as String,
+      valorCentavos: (m['valor_centavos'] as num).toInt(),
+      categoria: CategoriaInfo.parse(m['categoria'] as String?),
+      pagoPorId: m['pago_por'] as String,
+      divididoEntre: lista,
+      dia: (m['dia'] as num).toInt(),
+      inicio: m['inicio'] as String,
+      ativo: _lerBool(m['ativo']),
+      criadoPor: m['criado_por'] as String?,
+      updatedAt: m['updated_at'] as String,
+      deleted: _lerBool(m['deleted']),
+    );
+  }
+
+  Map<String, Object?> toLocal() => {
+        'id': id,
+        'casa_id': casaId,
+        'descricao': descricao,
+        'valor_centavos': valorCentavos,
+        'categoria': categoria.name,
+        'pago_por': pagoPorId,
+        'dividido_entre': jsonEncode(divididoEntre),
+        'dia': dia,
+        'inicio': inicio,
+        'ativo': ativo ? 1 : 0,
         'criado_por': criadoPor,
         'updated_at': updatedAt,
         'deleted': deleted ? 1 : 0,

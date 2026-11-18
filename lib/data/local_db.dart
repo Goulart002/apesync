@@ -8,7 +8,31 @@ import 'package:sqflite/sqflite.dart';
 /// Cada tabela espelha a do Supabase e tem a coluna extra `pendente`
 /// (1 = alteração feita no celular que ainda não subiu para o servidor).
 class LocalDb {
-  static const tabelas = ['casas', 'moradores', 'gastos', 'pagamentos'];
+  /// Na ordem do envio: quem é referenciado vem antes (casa, morador,
+  /// gasto fixo, gasto...).
+  static const tabelas = [
+    'casas',
+    'moradores',
+    'recorrencias',
+    'gastos',
+    'pagamentos',
+  ];
+
+  static const _tabelaRecorrencias = '''CREATE TABLE recorrencias (
+      id TEXT PRIMARY KEY,
+      casa_id TEXT NOT NULL,
+      descricao TEXT NOT NULL,
+      valor_centavos INTEGER NOT NULL,
+      categoria TEXT NOT NULL,
+      pago_por TEXT NOT NULL,
+      dividido_entre TEXT NOT NULL,
+      dia INTEGER NOT NULL,
+      inicio TEXT NOT NULL,
+      ativo INTEGER NOT NULL DEFAULT 1,
+      criado_por TEXT,
+      updated_at TEXT NOT NULL,
+      deleted INTEGER NOT NULL DEFAULT 0,
+      pendente INTEGER NOT NULL DEFAULT 0)''';
 
   static const _schema = [
     '''CREATE TABLE casas (
@@ -26,6 +50,7 @@ class LocalDb {
       nome TEXT NOT NULL,
       cor INTEGER NOT NULL DEFAULT 0,
       usuario_id TEXT,
+      chave_pix TEXT,
       updated_at TEXT NOT NULL,
       deleted INTEGER NOT NULL DEFAULT 0,
       pendente INTEGER NOT NULL DEFAULT 0)''',
@@ -39,9 +64,11 @@ class LocalDb {
       dividido_entre TEXT NOT NULL,
       data TEXT NOT NULL,
       criado_por TEXT,
+      recorrencia_id TEXT,
       updated_at TEXT NOT NULL,
       deleted INTEGER NOT NULL DEFAULT 0,
       pendente INTEGER NOT NULL DEFAULT 0)''',
+    _tabelaRecorrencias,
     '''CREATE TABLE pagamentos (
       id TEXT PRIMARY KEY,
       casa_id TEXT NOT NULL,
@@ -63,7 +90,7 @@ class LocalDb {
     final caminho = p.join(await getDatabasesPath(), 'apesync_$usuarioId.db');
     return openDatabase(
       caminho,
-      version: 2,
+      version: 3,
       onCreate: (db, _) async {
         for (final sql in _schema) {
           await db.execute(sql);
@@ -77,6 +104,12 @@ class LocalDb {
           await db.delete('meta',
               where: 'chave LIKE ?', whereArgs: ['pull_casas_%']);
         }
+        if (de < 3) {
+          // v3: chave PIX dos moradores e gastos fixos.
+          await db.execute('ALTER TABLE moradores ADD COLUMN chave_pix TEXT');
+          await db.execute('ALTER TABLE gastos ADD COLUMN recorrencia_id TEXT');
+          await db.execute(_tabelaRecorrencias);
+        }
       },
     );
   }
@@ -84,7 +117,7 @@ class LocalDb {
   /// Apaga do celular tudo de uma casa (quando o usuário sai ou é removido).
   static Future<void> apagarCasa(Database db, String casaId) =>
       db.transaction((t) async {
-        for (final tabela in ['moradores', 'gastos', 'pagamentos']) {
+        for (final tabela in tabelas.where((t) => t != 'casas')) {
           await t.delete(tabela, where: 'casa_id = ?', whereArgs: [casaId]);
         }
         await t.delete('casas', where: 'id = ?', whereArgs: [casaId]);
@@ -110,9 +143,10 @@ class LocalDb {
     r['deleted'] = l['deleted'] == 1;
     // Linha antiga (antes do administrador): deixa o servidor decidir.
     if (tabela == 'casas' && r['admin_id'] == null) r.remove('admin_id');
-    if (tabela == 'gastos') {
+    if (tabela == 'gastos' || tabela == 'recorrencias') {
       r['dividido_entre'] = jsonDecode(l['dividido_entre'] as String);
     }
+    if (tabela == 'recorrencias') r['ativo'] = l['ativo'] == 1;
     return r;
   }
 
@@ -121,9 +155,10 @@ class LocalDb {
     final l = Map<String, Object?>.from(r)..remove('synced_at');
     l['deleted'] = r['deleted'] == true ? 1 : 0;
     l['pendente'] = 0;
-    if (tabela == 'gastos') {
+    if (tabela == 'gastos' || tabela == 'recorrencias') {
       l['dividido_entre'] = jsonEncode(r['dividido_entre']);
     }
+    if (tabela == 'recorrencias') l['ativo'] = r['ativo'] == true ? 1 : 0;
     return l;
   }
 

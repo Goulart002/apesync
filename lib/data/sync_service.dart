@@ -103,6 +103,9 @@ class SyncService extends ChangeNotifier {
       } while (_deNovo);
 
       if (mudou) await data.recarregar();
+      // Gastos fixos do mês: depois do download, para não lançar de novo o
+      // que outro celular já lançou.
+      if (await data.gerarRecorrentes()) await _push(db, casa.id);
       ultimaSync = DateTime.now();
       ultimoErro = null;
       estado = EstadoSync.sincronizado;
@@ -243,7 +246,7 @@ class SyncService extends ChangeNotifier {
           ),
           callback: (_) => sincronizar(),
         );
-    for (final t in ['moradores', 'gastos', 'pagamentos']) {
+    for (final t in ['moradores', 'recorrencias', 'gastos', 'pagamentos']) {
       canal = canal.onPostgresChanges(
         event: PostgresChangeEvent.all,
         schema: 'public',

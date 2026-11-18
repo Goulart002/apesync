@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/app_data.dart';
+import '../routes.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 
@@ -47,6 +48,13 @@ class _GastosScreenState extends State<GastosScreen> {
                       style: TextStyle(
                           fontSize: 28, fontWeight: FontWeight.w700)),
                 ),
+                TextButton.icon(
+                  onPressed: () =>
+                      Navigator.pushNamed(context, Rotas.gastosFixos),
+                  icon: const Icon(Icons.repeat, size: 18),
+                  label: const Text('Gastos fixos'),
+                ),
+                const SizedBox(width: 4),
                 SquareIconButton(
                   icon: Icons.search,
                   onTap: () => ScaffoldMessenger.of(context).showSnackBar(

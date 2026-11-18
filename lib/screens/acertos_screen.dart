@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/app_data.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import '../widgets/pix_widgets.dart';
 import 'fluxo.dart';
 
 /// Acertos: dívidas simplificadas (quem paga quem), saldo de cada morador
@@ -242,9 +243,37 @@ class _TransferenciaCard extends StatelessWidget {
             const Text(
                 'Quem paga, quem recebe ou o administrador registra o pagamento.',
                 style: TextStyle(fontSize: 12, color: AppColors.muted)),
+          ..._pix(context, data, para),
         ],
       ),
     );
+  }
+
+  /// Pagar/cobrar com PIX (só para quem paga ou quem recebe).
+  List<Widget> _pix(BuildContext context, AppData data, Morador para) {
+    final euPago = t.deId == data.euId;
+    final euRecebo = t.paraId == data.euId;
+    if (!euPago && !euRecebo) return const [];
+
+    final Widget conteudo;
+    if (para.chavePix != null) {
+      conteudo = TextButton.icon(
+        onPressed: () => mostrarPix(context, t: t, onRegistrar: onPagar),
+        icon: const Icon(Icons.pix, size: 18),
+        label: Text(euPago ? 'Pagar com PIX' : 'Cobrar com PIX'),
+      );
+    } else if (euRecebo) {
+      conteudo = TextButton.icon(
+        onPressed: () => editarMinhaChavePix(context),
+        icon: const Icon(Icons.pix, size: 18),
+        label: const Text('Cadastre sua chave PIX para cobrar'),
+      );
+    } else {
+      conteudo = Text(
+          '${para.nome} ainda não cadastrou a chave PIX (em Moradores).',
+          style: const TextStyle(fontSize: 12, color: AppColors.muted));
+    }
+    return [const SizedBox(height: 4), Center(child: conteudo)];
   }
 }
 

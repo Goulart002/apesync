@@ -91,6 +91,28 @@ Início → card de saldo → **Ver acertos** (`screens/acertos_screen.dart`):
 
 Testes em `test/acertos_test.dart` (com os gastos de exemplo: 3 transferências em vez de 6).
 
+### PIX nos acertos
+
+- Cada morador cadastra a **própria chave PIX** em Moradores (ícone PIX na sua linha). Só a
+  própria pessoa muda a dela — o servidor também garante isso (trigger `proteger_morador`).
+- **Pagar com PIX** (quando você deve): gera o código **PIX copia e cola** já com o valor, para
+  colar no app do banco, e oferece "Já paguei — registrar".
+- **Cobrar com PIX** (quando você recebe): mostra o **QR code** e permite mandar a cobrança pelo
+  WhatsApp.
+- O código segue o padrão BR Code do Banco Central (`lib/data/pix.dart`, testes em
+  `test/pix_test.dart`, incluindo o exemplo oficial do manual). Pacote `qr_flutter` para o QR.
+
+## Gastos fixos (recorrentes)
+
+- No **Novo gasto**, ligue **Repetir todo mês**: o app lança o gasto todo mês no mesmo dia
+  (dia 31 em mês curto vira o último dia). Ótimo para aluguel, internet, condomínio.
+- Aba Gastos → **Gastos fixos**: lista, editar valor (vale para os próximos meses), pausar/retomar
+  (ao retomar não lança os meses pausados) e excluir (os já lançados continuam).
+- Quem lança é o celular de quem criou o gasto fixo ou do admin, ao abrir o app/sincronizar. O
+  gasto de cada mês tem **id determinístico** (UUID v5 de gasto fixo + mês): dois celulares lançando
+  o mesmo mês não duplicam. Lógica em `lib/data/recorrentes.dart`, testes em
+  `test/recorrentes_test.dart`.
+
 ## Scanner de nota fiscal
 
 Botão **Escanear nota fiscal** no Novo gasto: tira foto (ou escolhe da galeria), lê o texto com
@@ -115,6 +137,7 @@ Código em `lib/services/nota_scanner.dart`; testes em `test/nota_scanner_test.d
 | Acertos | `screens/acertos_screen.dart` | `/acertos` |
 | Sua casa | `screens/casa_screen.dart` | `/casa` |
 | Moradores | `screens/moradores_screen.dart` | `/moradores` |
+| Gastos fixos | `screens/recorrentes_screen.dart` | `/gastos-fixos` |
 
 ## Navegação
 
