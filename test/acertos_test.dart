@@ -57,4 +57,47 @@ void main() {
     final g = _g('x', 1001, 'eu');
     expect([for (final id in ids) g.parteDe(id)], [251, 250, 250, 250]);
   });
+
+  group('Remover morador devendo', () {
+    const bia = Morador(id: 'bia', casaId: 'c', nome: 'Bia', updatedAt: '');
+    Gasto? ajuste(String quem, int saldo) => Calculos.ajusteDeRemocao(
+          id: 'aj',
+          casaId: 'c',
+          removido: Morador(id: quem, casaId: 'c', nome: quem, updatedAt: ''),
+          saldo: saldo,
+          ficam: ids,
+          data: DateTime(2026, 11, 17),
+        );
+
+    test('Dívida da Bia é dividida entre quem fica e as contas fecham', () {
+      final aj = Calculos.ajusteDeRemocao(
+        id: 'aj',
+        casaId: 'c',
+        removido: bia,
+        saldo: -11300,
+        ficam: ids, // a própria Bia é ignorada na divisão
+        data: DateTime(2026, 11, 17),
+      )!;
+      expect(aj.categoria, Categoria.ajuste);
+      expect(aj.valorCentavos, 11300);
+      expect(aj.divididoEntre, ['eu', 'ana', 'lucas']);
+
+      final depois = [...gastos, aj];
+      final s = {for (final id in ids) id: Calculos.saldoDe(id, depois, [])};
+      expect(s['bia'], 0);
+      // 11300 / 3 = 3766,67 -> 3767 + 3767 + 3766
+      expect(s, {
+        'eu': 1540 - 3767,
+        'ana': 14900 - 3767,
+        'lucas': -5140 - 3766,
+        'bia': 0
+      });
+      expect(s.values.reduce((a, b) => a + b), 0);
+    });
+
+    test('Sem dívida (ou com dinheiro a receber) não cria ajuste', () {
+      expect(ajuste('eu', 0), isNull);
+      expect(ajuste('ana', 14900), isNull);
+    });
+  });
 }

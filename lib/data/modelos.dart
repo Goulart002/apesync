@@ -12,14 +12,28 @@ import '../theme.dart';
 // que são o que permite sincronizar alterações e exclusões feitas offline.
 // =============================================================================
 
-enum Categoria { mercado, contas, moradia, outros }
+/// [ajuste] não é escolhida pelo usuário: o app cria sozinho quando o
+/// administrador remove um morador que estava devendo (a dívida dele é
+/// dividida entre quem fica).
+enum Categoria { mercado, contas, moradia, outros, ajuste }
 
 extension CategoriaInfo on Categoria {
+  /// Categorias que aparecem no "Novo gasto" e nos filtros.
+  static const lancaveis = [
+    Categoria.mercado,
+    Categoria.contas,
+    Categoria.moradia,
+    Categoria.outros,
+  ];
+
+  bool get ehAjuste => this == Categoria.ajuste;
+
   String get label => switch (this) {
         Categoria.mercado => 'Mercado',
         Categoria.contas => 'Contas',
         Categoria.moradia => 'Moradia',
         Categoria.outros => 'Outros',
+        Categoria.ajuste => 'Ajuste',
       };
 
   IconData get icon => switch (this) {
@@ -27,6 +41,7 @@ extension CategoriaInfo on Categoria {
         Categoria.contas => Icons.bolt_outlined,
         Categoria.moradia => Icons.home_outlined,
         Categoria.outros => Icons.category_outlined,
+        Categoria.ajuste => Icons.balance_outlined,
       };
 
   Color get color => switch (this) {
@@ -34,6 +49,7 @@ extension CategoriaInfo on Categoria {
         Categoria.contas => AppColors.blue,
         Categoria.moradia => AppColors.primary,
         Categoria.outros => AppColors.purple,
+        Categoria.ajuste => AppColors.muted,
       };
 
   Color get background => switch (this) {
@@ -41,6 +57,7 @@ extension CategoriaInfo on Categoria {
         Categoria.contas => AppColors.blueLight,
         Categoria.moradia => AppColors.primaryLight,
         Categoria.outros => AppColors.purpleLight,
+        Categoria.ajuste => AppColors.divider,
       };
 
   static Categoria parse(String? s) => Categoria.values
@@ -84,6 +101,9 @@ class Casa {
   final String nome;
   final String codigoConvite;
   final String criadoPor;
+
+  /// usuario_id (conta) de quem administra a casa.
+  final String adminId;
   final String updatedAt;
   final bool deleted;
 
@@ -92,6 +112,7 @@ class Casa {
     required this.nome,
     required this.codigoConvite,
     required this.criadoPor,
+    required this.adminId,
     required this.updatedAt,
     this.deleted = false,
   });
@@ -101,8 +122,20 @@ class Casa {
         nome: m['nome'] as String,
         codigoConvite: m['codigo_convite'] as String,
         criadoPor: m['criado_por'] as String,
+        // Casas antigas (antes do administrador): quem criou é o admin.
+        adminId: (m['admin_id'] as String?) ?? m['criado_por'] as String,
         updatedAt: m['updated_at'] as String,
         deleted: _lerBool(m['deleted']),
+      );
+
+  Casa copia({String? nome, String? codigoConvite}) => Casa(
+        id: id,
+        nome: nome ?? this.nome,
+        codigoConvite: codigoConvite ?? this.codigoConvite,
+        criadoPor: criadoPor,
+        adminId: adminId,
+        updatedAt: updatedAt,
+        deleted: deleted,
       );
 
   Map<String, Object?> toLocal() => {
@@ -110,6 +143,7 @@ class Casa {
         'nome': nome,
         'codigo_convite': codigoConvite,
         'criado_por': criadoPor,
+        'admin_id': adminId,
         'updated_at': updatedAt,
         'deleted': deleted ? 1 : 0,
       };
@@ -121,6 +155,10 @@ class Morador {
   final String nome;
   final int cor;
   final String? usuarioId;
+
+  /// Chave PIX já normalizada (ver Pix.normalizar). Só a própria pessoa
+  /// muda a dela.
+  final String? chavePix;
   final String updatedAt;
   final bool deleted;
 
@@ -130,6 +168,7 @@ class Morador {
     required this.nome,
     this.cor = 0,
     this.usuarioId,
+    this.chavePix,
     required this.updatedAt,
     this.deleted = false,
   });
@@ -138,12 +177,36 @@ class Morador {
   String get inicial => nome.isEmpty ? '?' : nome[0].toUpperCase();
   bool get temConta => usuarioId != null;
 
+  Morador copia({String? nome, bool? deleted}) => Morador(
+        id: id,
+        casaId: casaId,
+        nome: nome ?? this.nome,
+        cor: cor,
+        usuarioId: usuarioId,
+        chavePix: chavePix,
+        updatedAt: updatedAt,
+        deleted: deleted ?? this.deleted,
+      );
+
+  /// Mesma pessoa com outra chave PIX (null = remove a chave).
+  Morador comChavePix(String? chave) => Morador(
+        id: id,
+        casaId: casaId,
+        nome: nome,
+        cor: cor,
+        usuarioId: usuarioId,
+        chavePix: chave,
+        updatedAt: updatedAt,
+        deleted: deleted,
+      );
+
   factory Morador.fromMap(Map<String, Object?> m) => Morador(
         id: m['id'] as String,
         casaId: m['casa_id'] as String,
         nome: m['nome'] as String,
         cor: (m['cor'] as num?)?.toInt() ?? 0,
         usuarioId: m['usuario_id'] as String?,
+        chavePix: m['chave_pix'] as String?,
         updatedAt: m['updated_at'] as String,
         deleted: _lerBool(m['deleted']),
       );
@@ -154,6 +217,7 @@ class Morador {
         'nome': nome,
         'cor': cor,
         'usuario_id': usuarioId,
+        'chave_pix': chavePix,
         'updated_at': updatedAt,
         'deleted': deleted ? 1 : 0,
       };
@@ -169,6 +233,9 @@ class Gasto {
   final List<String> divididoEntre;
   final DateTime data;
   final String? criadoPor;
+
+  /// Gasto fixo que gerou este gasto (null = lançado à mão).
+  final String? recorrenciaId;
   final String updatedAt;
   final bool deleted;
 
@@ -182,6 +249,7 @@ class Gasto {
     required this.divididoEntre,
     required this.data,
     this.criadoPor,
+    this.recorrenciaId,
     this.updatedAt = '',
     this.deleted = false,
   });
@@ -207,6 +275,7 @@ class Gasto {
         divididoEntre: divididoEntre,
         data: data,
         criadoPor: criadoPor,
+        recorrenciaId: recorrenciaId,
         deleted: true,
       );
 
@@ -225,6 +294,7 @@ class Gasto {
       divididoEntre: lista,
       data: lerData(m['data'] as String),
       criadoPor: m['criado_por'] as String?,
+      recorrenciaId: m['recorrencia_id'] as String?,
       updatedAt: m['updated_at'] as String,
       deleted: _lerBool(m['deleted']),
     );
@@ -239,6 +309,102 @@ class Gasto {
         'pago_por': pagoPorId,
         'dividido_entre': jsonEncode(divididoEntre),
         'data': dataIso(data),
+        'criado_por': criadoPor,
+        'recorrencia_id': recorrenciaId,
+        'updated_at': updatedAt,
+        'deleted': deleted ? 1 : 0,
+      };
+}
+
+/// Gasto fixo (aluguel, internet...): vira um [Gasto] por mês, no [dia]
+/// escolhido, a partir do mês [inicio] (AAAA-MM).
+class Recorrencia {
+  final String id;
+  final String casaId;
+  final String descricao;
+  final int valorCentavos;
+  final Categoria categoria;
+  final String pagoPorId;
+  final List<String> divididoEntre;
+  final int dia;
+  final String inicio;
+  final bool ativo;
+  final String? criadoPor;
+  final String updatedAt;
+  final bool deleted;
+
+  const Recorrencia({
+    required this.id,
+    required this.casaId,
+    required this.descricao,
+    required this.valorCentavos,
+    required this.categoria,
+    required this.pagoPorId,
+    required this.divididoEntre,
+    required this.dia,
+    required this.inicio,
+    this.ativo = true,
+    this.criadoPor,
+    this.updatedAt = '',
+    this.deleted = false,
+  });
+
+  Recorrencia copia({
+    String? descricao,
+    int? valorCentavos,
+    String? inicio,
+    bool? ativo,
+    bool? deleted,
+  }) =>
+      Recorrencia(
+        id: id,
+        casaId: casaId,
+        descricao: descricao ?? this.descricao,
+        valorCentavos: valorCentavos ?? this.valorCentavos,
+        categoria: categoria,
+        pagoPorId: pagoPorId,
+        divididoEntre: divididoEntre,
+        dia: dia,
+        inicio: inicio ?? this.inicio,
+        ativo: ativo ?? this.ativo,
+        criadoPor: criadoPor,
+        updatedAt: updatedAt,
+        deleted: deleted ?? this.deleted,
+      );
+
+  factory Recorrencia.fromMap(Map<String, Object?> m) {
+    final div = m['dividido_entre'];
+    final lista = div is String
+        ? (jsonDecode(div) as List).cast<String>()
+        : (div as List).cast<String>();
+    return Recorrencia(
+      id: m['id'] as String,
+      casaId: m['casa_id'] as String,
+      descricao: m['descricao'] as String,
+      valorCentavos: (m['valor_centavos'] as num).toInt(),
+      categoria: CategoriaInfo.parse(m['categoria'] as String?),
+      pagoPorId: m['pago_por'] as String,
+      divididoEntre: lista,
+      dia: (m['dia'] as num).toInt(),
+      inicio: m['inicio'] as String,
+      ativo: _lerBool(m['ativo']),
+      criadoPor: m['criado_por'] as String?,
+      updatedAt: m['updated_at'] as String,
+      deleted: _lerBool(m['deleted']),
+    );
+  }
+
+  Map<String, Object?> toLocal() => {
+        'id': id,
+        'casa_id': casaId,
+        'descricao': descricao,
+        'valor_centavos': valorCentavos,
+        'categoria': categoria.name,
+        'pago_por': pagoPorId,
+        'dividido_entre': jsonEncode(divididoEntre),
+        'dia': dia,
+        'inicio': inicio,
+        'ativo': ativo ? 1 : 0,
         'criado_por': criadoPor,
         'updated_at': updatedAt,
         'deleted': deleted ? 1 : 0,
@@ -299,6 +465,231 @@ class Pagamento {
       };
 }
 
+/// Começo de um gasto novo (ex.: ao concluir a tarefa "Fazer compras").
+class GastoRascunho {
+  final String descricao;
+  final Categoria categoria;
+  const GastoRascunho(this.descricao, this.categoria);
+}
+
+// ---------------------------------------------------------------------------
+// Tarefas da casa
+// ---------------------------------------------------------------------------
+
+enum TipoTarefa { faxina, louca, lixo, compras, roupa, outros }
+
+extension TipoTarefaInfo on TipoTarefa {
+  String get label => switch (this) {
+        TipoTarefa.faxina => 'Faxina',
+        TipoTarefa.louca => 'Louça',
+        TipoTarefa.lixo => 'Lixo',
+        TipoTarefa.compras => 'Compras',
+        TipoTarefa.roupa => 'Roupa',
+        TipoTarefa.outros => 'Outros',
+      };
+
+  IconData get icon => switch (this) {
+        TipoTarefa.faxina => Icons.cleaning_services_outlined,
+        TipoTarefa.louca => Icons.local_dining_outlined,
+        TipoTarefa.lixo => Icons.delete_outline,
+        TipoTarefa.compras => Icons.shopping_basket_outlined,
+        TipoTarefa.roupa => Icons.local_laundry_service_outlined,
+        TipoTarefa.outros => Icons.task_alt,
+      };
+
+  static TipoTarefa parse(String? s) => TipoTarefa.values
+      .firstWhere((t) => t.name == s, orElse: () => TipoTarefa.outros);
+}
+
+enum Repeticao { nenhuma, diaria, semanal, mensal }
+
+Repeticao _lerRepeticao(String? s) => Repeticao.values
+    .firstWhere((r) => r.name == s, orElse: () => Repeticao.nenhuma);
+
+List<T> _lerLista<T>(Object? v) => v is String
+    ? (jsonDecode(v) as List).cast<T>()
+    : (v as List? ?? const []).cast<T>();
+
+class Tarefa {
+  final String id;
+  final String casaId;
+  final String titulo;
+  final TipoTarefa tipo;
+
+  /// De quem é a vez (null = qualquer pessoa).
+  final String? responsavelId;
+
+  /// Ordem do rodízio (vazia = sem rodízio).
+  final List<String> rodizio;
+  final Repeticao repeticao;
+
+  /// Dias da semana (1 = segunda ... 7 = domingo), para [Repeticao.semanal].
+  final List<int> diasSemana;
+
+  /// Dia do mês, para [Repeticao.mensal].
+  final int? diaMes;
+
+  /// Quando é a próxima vez.
+  final DateTime proxima;
+
+  /// Só tarefa avulsa: já foi feita.
+  final bool concluida;
+  final String? criadoPor;
+  final String updatedAt;
+  final bool deleted;
+
+  const Tarefa({
+    required this.id,
+    required this.casaId,
+    required this.titulo,
+    this.tipo = TipoTarefa.outros,
+    this.responsavelId,
+    this.rodizio = const [],
+    this.repeticao = Repeticao.nenhuma,
+    this.diasSemana = const [],
+    this.diaMes,
+    required this.proxima,
+    this.concluida = false,
+    this.criadoPor,
+    this.updatedAt = '',
+    this.deleted = false,
+  });
+
+  bool get repete => repeticao != Repeticao.nenhuma;
+  bool get temRodizio => rodizio.length > 1;
+
+  Tarefa copia({
+    String? responsavelId,
+    bool limparResponsavel = false,
+    DateTime? proxima,
+    bool? concluida,
+    bool? deleted,
+  }) =>
+      Tarefa(
+        id: id,
+        casaId: casaId,
+        titulo: titulo,
+        tipo: tipo,
+        responsavelId:
+            limparResponsavel ? null : (responsavelId ?? this.responsavelId),
+        rodizio: rodizio,
+        repeticao: repeticao,
+        diasSemana: diasSemana,
+        diaMes: diaMes,
+        proxima: proxima ?? this.proxima,
+        concluida: concluida ?? this.concluida,
+        criadoPor: criadoPor,
+        updatedAt: updatedAt,
+        deleted: deleted ?? this.deleted,
+      );
+
+  factory Tarefa.fromMap(Map<String, Object?> m) => Tarefa(
+        id: m['id'] as String,
+        casaId: m['casa_id'] as String,
+        titulo: m['titulo'] as String,
+        tipo: TipoTarefaInfo.parse(m['tipo'] as String?),
+        responsavelId: m['responsavel_id'] as String?,
+        rodizio: _lerLista<String>(m['rodizio']),
+        repeticao: _lerRepeticao(m['repeticao'] as String?),
+        diasSemana:
+            _lerLista<num>(m['dias_semana']).map((n) => n.toInt()).toList(),
+        diaMes: (m['dia_mes'] as num?)?.toInt(),
+        proxima: lerData(m['proxima'] as String),
+        concluida: _lerBool(m['concluida']),
+        criadoPor: m['criado_por'] as String?,
+        updatedAt: m['updated_at'] as String,
+        deleted: _lerBool(m['deleted']),
+      );
+
+  Map<String, Object?> toLocal() => {
+        'id': id,
+        'casa_id': casaId,
+        'titulo': titulo,
+        'tipo': tipo.name,
+        'responsavel_id': responsavelId,
+        'rodizio': jsonEncode(rodizio),
+        'repeticao': repeticao.name,
+        'dias_semana': jsonEncode(diasSemana),
+        'dia_mes': diaMes,
+        'proxima': dataIso(proxima),
+        'concluida': concluida ? 1 : 0,
+        'criado_por': criadoPor,
+        'updated_at': updatedAt,
+        'deleted': deleted ? 1 : 0,
+      };
+}
+
+/// Uma vez em que a tarefa foi feita (histórico / placar).
+class TarefaFeita {
+  final String id;
+  final String casaId;
+  final String tarefaId;
+  final String titulo;
+  final DateTime dataPrevista;
+
+  /// De quem era a vez (null = qualquer pessoa).
+  final String? responsavelId;
+  final String feitaPorId;
+  final String feitaEm;
+  final String updatedAt;
+  final bool deleted;
+
+  const TarefaFeita({
+    required this.id,
+    required this.casaId,
+    required this.tarefaId,
+    required this.titulo,
+    required this.dataPrevista,
+    this.responsavelId,
+    required this.feitaPorId,
+    required this.feitaEm,
+    this.updatedAt = '',
+    this.deleted = false,
+  });
+
+  /// Alguém cobriu a vez de outra pessoa.
+  bool get noLugarDeOutro =>
+      responsavelId != null && responsavelId != feitaPorId;
+
+  TarefaFeita copiaExcluida() => TarefaFeita(
+        id: id,
+        casaId: casaId,
+        tarefaId: tarefaId,
+        titulo: titulo,
+        dataPrevista: dataPrevista,
+        responsavelId: responsavelId,
+        feitaPorId: feitaPorId,
+        feitaEm: feitaEm,
+        deleted: true,
+      );
+
+  factory TarefaFeita.fromMap(Map<String, Object?> m) => TarefaFeita(
+        id: m['id'] as String,
+        casaId: m['casa_id'] as String,
+        tarefaId: m['tarefa_id'] as String,
+        titulo: m['titulo'] as String,
+        dataPrevista: lerData(m['data_prevista'] as String),
+        responsavelId: m['responsavel_id'] as String?,
+        feitaPorId: m['feita_por'] as String,
+        feitaEm: m['feita_em'] as String,
+        updatedAt: m['updated_at'] as String,
+        deleted: _lerBool(m['deleted']),
+      );
+
+  Map<String, Object?> toLocal() => {
+        'id': id,
+        'casa_id': casaId,
+        'tarefa_id': tarefaId,
+        'titulo': titulo,
+        'data_prevista': dataIso(dataPrevista),
+        'responsavel_id': responsavelId,
+        'feita_por': feitaPorId,
+        'feita_em': feitaEm,
+        'updated_at': updatedAt,
+        'deleted': deleted ? 1 : 0,
+      };
+}
+
 /// Uma transferência sugerida pela simplificação de dívidas.
 class Transferencia {
   final String deId;
@@ -335,8 +726,18 @@ int? parseReais(String texto) {
 }
 
 const _meses = [
-  'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
-  'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'
+  'janeiro',
+  'fevereiro',
+  'março',
+  'abril',
+  'maio',
+  'junho',
+  'julho',
+  'agosto',
+  'setembro',
+  'outubro',
+  'novembro',
+  'dezembro'
 ];
 
 String nomeMes(DateTime d) {

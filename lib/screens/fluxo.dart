@@ -23,6 +23,7 @@ Future<void> entrarNoApp(BuildContext context) async {
 
 /// Mensagem amigável para erros do Supabase / rede.
 String mensagemErro(Object e) {
+  if (e is AvisoApp) return e.mensagem;
   if (e is AuthException) {
     final m = e.message.toLowerCase();
     if (m.contains('invalid login')) return 'E-mail ou senha incorretos';

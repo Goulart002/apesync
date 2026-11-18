@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../data/app_data.dart';
 import '../routes.dart';
 import '../theme.dart';
 import 'gastos_screen.dart';
 import 'inicio_screen.dart';
 import 'sobre_screen.dart';
+import 'tarefas_screen.dart';
 
 /// Tela "casca" com a barra de navegação inferior (Início | Gastos | Sobre).
 class HomeShell extends StatefulWidget {
@@ -16,6 +18,34 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   int _aba = 0;
+  bool _saiu = false;
+
+  @override
+  void initState() {
+    super.initState();
+    AppData.instance.addListener(_verificarCasa);
+  }
+
+  @override
+  void dispose() {
+    AppData.instance.removeListener(_verificarCasa);
+    super.dispose();
+  }
+
+  /// Saiu da casa ou foi removido (o sync avisa): volta para "Sua casa".
+  void _verificarCasa() {
+    final data = AppData.instance;
+    if (_saiu || !mounted || !data.aberto || data.temCasa) return;
+    _saiu = true;
+    final aviso = data.avisoSaida;
+    data.avisoSaida = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      Navigator.pushNamedAndRemoveUntil(context, Rotas.casa, (_) => false);
+      if (aviso != null) messenger.showSnackBar(SnackBar(content: Text(aviso)));
+    });
+  }
 
   void _irPara(int aba) => setState(() => _aba = aba);
 
@@ -35,19 +65,27 @@ class _HomeShellState extends State<HomeShell> {
         child: IndexedStack(
           index: _aba,
           children: [
-            InicioScreen(onVerTodos: () => _irPara(1)),
+            InicioScreen(
+                onVerTodos: () => _irPara(1), onVerTarefas: () => _irPara(2)),
             const GastosScreen(),
+            const TarefasScreen(),
             const SobreScreen(),
           ],
         ),
       ),
-      floatingActionButton: _aba == 2
-          ? null
-          : FloatingActionButton(
-              onPressed: _novoGasto,
-              tooltip: 'Novo gasto',
-              child: const Icon(Icons.add, size: 30),
-            ),
+      floatingActionButton: switch (_aba) {
+        3 => null,
+        2 => FloatingActionButton(
+            onPressed: () => Navigator.pushNamed(context, Rotas.novaTarefa),
+            tooltip: 'Nova tarefa',
+            child: const Icon(Icons.add_task, size: 28),
+          ),
+        _ => FloatingActionButton(
+            onPressed: _novoGasto,
+            tooltip: 'Novo gasto',
+            child: const Icon(Icons.add, size: 30),
+          ),
+      },
       bottomNavigationBar: Container(
         decoration: const BoxDecoration(
           border: Border(top: BorderSide(color: AppColors.border)),
@@ -65,6 +103,10 @@ class _HomeShellState extends State<HomeShell> {
                 selectedIcon:
                     Icon(Icons.receipt_long, color: AppColors.primary),
                 label: 'Gastos'),
+            NavigationDestination(
+                icon: Icon(Icons.task_alt_outlined),
+                selectedIcon: Icon(Icons.task_alt, color: AppColors.primary),
+                label: 'Tarefas'),
             NavigationDestination(
                 icon: Icon(Icons.info_outline),
                 selectedIcon: Icon(Icons.info, color: AppColors.primary),
