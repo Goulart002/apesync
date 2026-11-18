@@ -178,7 +178,10 @@ class GastoTile extends StatelessWidget {
                     style: const TextStyle(
                         fontSize: 15, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 2),
-                Text('$pagador pagou',
+                Text(
+                    gasto.recorrenciaId != null
+                        ? '$pagador pagou · fixo'
+                        : '$pagador pagou',
                     style: const TextStyle(
                         fontSize: 13, color: AppColors.muted)),
               ],

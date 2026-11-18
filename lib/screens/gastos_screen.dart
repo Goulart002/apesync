@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/app_data.dart';
+import '../routes.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 
@@ -47,6 +48,13 @@ class _GastosScreenState extends State<GastosScreen> {
                       style: TextStyle(
                           fontSize: 28, fontWeight: FontWeight.w700)),
                 ),
+                TextButton.icon(
+                  onPressed: () =>
+                      Navigator.pushNamed(context, Rotas.gastosFixos),
+                  icon: const Icon(Icons.repeat, size: 18),
+                  label: const Text('Gastos fixos'),
+                ),
+                const SizedBox(width: 4),
                 SquareIconButton(
                   icon: Icons.search,
                   onTap: () => ScaffoldMessenger.of(context).showSnackBar(
@@ -99,7 +107,10 @@ class _GastosScreenState extends State<GastosScreen> {
               child: Row(
                 children: [
                   _chip('Todos', null),
-                  for (final c in Categoria.values) _chip(c.label, c),
+                  for (final c in CategoriaInfo.lancaveis) _chip(c.label, c),
+                  // "Ajuste" só aparece se houver algum no mês.
+                  if (doMes.any((g) => g.categoria.ehAjuste))
+                    _chip(Categoria.ajuste.label, Categoria.ajuste),
                 ],
               ),
             ),

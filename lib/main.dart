@@ -11,6 +11,7 @@ import 'screens/home_shell.dart';
 import 'screens/login_screen.dart';
 import 'screens/moradores_screen.dart';
 import 'screens/novo_gasto_screen.dart';
+import 'screens/recorrentes_screen.dart';
 import 'theme.dart';
 
 Future<void> main() async {
@@ -59,6 +60,7 @@ class ApeSyncApp extends StatelessWidget {
         Rotas.novoGasto: (_) => const NovoGastoScreen(),
         Rotas.acertos: (_) => const AcertosScreen(),
         Rotas.moradores: (_) => const MoradoresScreen(),
+        Rotas.gastosFixos: (_) => const RecorrentesScreen(),
       },
     );
   }

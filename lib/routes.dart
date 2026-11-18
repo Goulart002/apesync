@@ -4,6 +4,7 @@
 ///   Home (abas: Início | Gastos | Sobre)
 ///     ├─► Novo gasto / Editar gasto (argumento: Gasto) ──► Home
 ///     ├─► Acertos
+///     ├─► Gastos fixos (aba Gastos)
 ///     └─► Moradores
 ///   Sobre ──(Sair da conta)──► Login
 class Rotas {
@@ -14,4 +15,5 @@ class Rotas {
   static const novoGasto = '/novo-gasto';
   static const acertos = '/acertos';
   static const moradores = '/moradores';
+  static const gastosFixos = '/gastos-fixos';
 }
