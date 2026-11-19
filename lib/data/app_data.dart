@@ -5,6 +5,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
+import '../services/login_google.dart';
 import 'calculos.dart';
 import 'local_db.dart';
 import 'modelos.dart';
@@ -146,9 +147,11 @@ class AppData extends ChangeNotifier {
   String get euId => meuMorador?.id ?? '';
 
   String get nomeUsuario {
+    final conta = _sb.auth.currentUser;
     final n = meuMorador?.nome ??
-        _sb.auth.currentUser?.userMetadata?['nome'] as String? ??
-        'Você';
+        (conta == null
+            ? 'Você'
+            : nomeDaConta(conta.userMetadata, conta.email));
     return n.trim().isEmpty ? 'Você' : n.trim().split(' ').first;
   }
 
@@ -317,6 +320,7 @@ class AppData extends ChangeNotifier {
     } catch (_) {
       // Sem internet: a sessão local é apagada mesmo assim.
     }
+    await LoginGoogle.sair(); // próxima entrada com Google pergunta a conta
   }
 
   // ---------------------------------------------------------------------------
@@ -358,10 +362,7 @@ class AppData extends ChangeNotifier {
         Morador(
           id: novoId(),
           casaId: casaId,
-          nome:
-              (user.userMetadata?['nome'] as String?)?.trim().isNotEmpty == true
-                  ? (user.userMetadata!['nome'] as String).trim()
-                  : (user.email ?? 'Eu').split('@').first,
+          nome: nomeDaConta(user.userMetadata, user.email),
           cor: 0,
           usuarioId: user.id,
           updatedAt: '',
@@ -373,7 +374,7 @@ class AppData extends ChangeNotifier {
     final user = _sb.auth.currentUser!;
     final casaId = await _sb.rpc('entrar_na_casa', params: {
       'p_codigo': codigo.trim().toUpperCase(),
-      'p_nome': user.userMetadata?['nome'] ?? user.email?.split('@').first,
+      'p_nome': nomeDaConta(user.userMetadata, user.email),
     });
     await _baixarCasa(casaId as String);
   }

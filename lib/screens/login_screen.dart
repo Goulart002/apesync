@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../routes.dart';
+import '../services/login_google.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import 'fluxo.dart';
@@ -19,6 +20,9 @@ class _LoginScreenState extends State<LoginScreen> {
   final _senha = TextEditingController();
   bool _senhaVisivel = false;
   bool _carregando = false;
+  bool _carregandoGoogle = false;
+
+  bool get _ocupado => _carregando || _carregandoGoogle;
 
   @override
   void dispose() {
@@ -43,6 +47,23 @@ class _LoginScreenState extends State<LoginScreen> {
           .showSnackBar(SnackBar(content: Text(mensagemErro(e))));
     } finally {
       if (mounted) setState(() => _carregando = false);
+    }
+  }
+
+  /// Primeira vez com Google cria a conta sozinha; se o e-mail já tinha conta
+  /// com senha, o Supabase junta as duas (mesma casa e histórico).
+  Future<void> _entrarComGoogle() async {
+    setState(() => _carregandoGoogle = true);
+    try {
+      final entrou = await LoginGoogle.entrar();
+      if (!entrou || !mounted) return;
+      await entrarNoApp(context);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(mensagemErro(e))));
+    } finally {
+      if (mounted) setState(() => _carregandoGoogle = false);
     }
   }
 
@@ -110,19 +131,18 @@ class _LoginScreenState extends State<LoginScreen> {
                       Align(
                         alignment: Alignment.centerRight,
                         child: TextButton(
-                          onPressed: () =>
-                              ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content: Text(
-                                    'Recuperação de senha: próxima sprint')),
-                          ),
+                          onPressed: _ocupado
+                              ? null
+                              : () => Navigator.pushNamed(
+                                  context, Rotas.recuperarSenha,
+                                  arguments: _email.text.trim()),
                           child: const Text('Esqueci minha senha',
                               style: TextStyle(fontWeight: FontWeight.w600)),
                         ),
                       ),
                       const SizedBox(height: 16),
                       FilledButton(
-                          onPressed: _carregando ? null : _entrar,
+                          onPressed: _ocupado ? null : _entrar,
                           child: _carregando
                               ? const SizedBox(
                                   width: 22,
@@ -144,16 +164,18 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 24),
                       OutlinedButton.icon(
-                        onPressed: () =>
-                            ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content: Text('Login com Google: próxima sprint')),
-                        ),
-                        icon: const Text('G',
-                            style: TextStyle(
-                                color: AppColors.blue,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 17)),
+                        onPressed: _ocupado ? null : _entrarComGoogle,
+                        icon: _carregandoGoogle
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2))
+                            : const Text('G',
+                                style: TextStyle(
+                                    color: AppColors.blue,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 17)),
                         label: const Text('Continuar com Google'),
                       ),
                       const Spacer(),

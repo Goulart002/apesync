@@ -20,7 +20,8 @@ Projeto Integrado 1 — Desenvolvimento Mobile · PUC Minas
 * Supabase — PostgreSQL, Auth, Row Level Security, Realtime
 * SQLite (`sqflite`) — banco local, offline-first
 * Google ML Kit Text Recognition — scanner de nota fiscal
-* `connectivity_plus`, `uuid`, `image_picker`
+* `google_sign_in` — login com Google nativo (Credential Manager do Android)
+* `connectivity_plus`, `uuid`, `image_picker`, `crypto`
 
 
 O repositório já vem com a permissão de INTERNET no `AndroidManifest.xml` e com `isMinifyEnabled = false`
@@ -48,6 +49,70 @@ Garantias da sincronização:
 - **Download com margem de 60 s**: cada download volta um pouco antes da última marca, para
   não perder linhas gravadas quase ao mesmo tempo; linhas que o celular já tem são ignoradas.
 - **Gastos e pagamentos só citam moradores da própria casa** (triggers `validar_moradores_*`).
+
+## Login com Google
+
+Botão **Continuar com Google** no login (`lib/services/login_google.dart`): abre a janela de
+contas do Android, sem navegador. O Google devolve um ID token e o Supabase troca por uma sessão
+(`signInWithIdToken`, com *nonce* contra reaproveitamento de token).
+- Primeira vez: a conta é criada sozinha e o nome do morador vem da conta Google.
+- Quem já tinha conta com senha no **mesmo e-mail** continua com a mesma conta: o Supabase junta
+  as duas (mesma casa, mesmo histórico).
+
+### Configuração (uma vez por projeto Supabase)
+
+1. **Google Cloud** ([console.cloud.google.com](https://console.cloud.google.com)) → criar um projeto.
+2. **Google Auth Platform → Branding / Público-alvo**: tipo **Externo**, nome do app e e-mail de
+   suporte. Enquanto o app estiver "Em teste", adicione o e-mail de quem vai testar em
+   **Usuários de teste**.
+3. **Clientes → Criar cliente → Aplicativo da Web** (ex.: "ApeSync Supabase"). Em *URIs de
+   redirecionamento autorizados* coloque `https://SEU-PROJETO.supabase.co/auth/v1/callback`.
+   Guarde o **ID do cliente** e a **chave secreta**.
+4. **Clientes → Criar cliente → Android**: pacote `com.example.apesync` e o **SHA-1** do PC que
+   gera o APK (comando abaixo). **Cada desenvolvedor cria um cliente Android com o SHA-1 do
+   próprio PC** (APKs de debug de PCs diferentes têm assinaturas diferentes).
+5. **Supabase → Authentication → Sign In / Providers → Google**: ativar, colar o ID do cliente
+   **Web** em *Client IDs* e a chave secreta em *Client Secret*. Deixe *Skip nonce checks*
+   desligado. Salvar.
+6. **`lib/config_google.dart`** → `GoogleConfig.webClientId` = ID do cliente **Web** (ou rode
+   com `--dart-define=GOOGLE_WEB_CLIENT_ID=...`). O ID não é segredo e fica no repositório, valendo
+   para a equipe toda; a chave secreta fica só no Supabase.
+
+SHA-1 do certificado de debug (PowerShell):
+
+```powershell
+& "C:\Program Files\Android\Android Studio\jbr\bin\keytool.exe" -J-Duser.language=en -list -v -keystore "$env:USERPROFILE\.android\debug.keystore" -alias androiddebugkey -storepass android -keypass android
+```
+
+(o `-J-Duser.language=en` evita um erro do keytool em português). Para publicar na Play Store,
+crie também um cliente Android com o SHA-1 da chave de release.
+
+Se der erro: *"O Google recusou o login neste aparelho"* = pacote ou SHA-1 errado no cliente
+Android (ou ID Web errado no `config_google.dart`); *"não está ativado no Supabase"* = passo 5;
+*"O ID do cliente Google do app não está no Supabase"* = o ID do `config_google.dart` não foi
+colado em *Client IDs*.
+
+## Recuperar senha
+
+Login → **Esqueci minha senha** (`screens/recuperar_senha_screen.dart`):
+1. A pessoa informa o e-mail e o Supabase manda o e-mail padrão **"Reset your password"**.
+2. Ela abre o e-mail **no celular onde pediu** e toca em **Reset password**.
+3. O link leva a `apesync://recuperar-senha`, que **abre o app já logado** (intent-filter no
+   `AndroidManifest.xml`; quem troca o link pela sessão é o `supabase_flutter`, com PKCE). O
+   `main.dart` recebe o aviso `passwordRecovery` e mostra a tela **Criar senha nova**.
+
+Serve também para quem entrou com Google criar uma senha. Link vencido, já usado ou aberto em
+outro celular mostra um aviso no app.
+
+Configuração (já feita no projeto): **Supabase → Authentication → URL Configuration →
+Redirect URLs** com `apesync://recuperar-senha`.
+
+Limites do e-mail padrão do Supabase: poucos e-mails por hora, só entrega para e-mails de
+**membros da organização** no Supabase e não deixa editar o modelo. Para usar com qualquer
+e-mail, configure um SMTP (Authentication → Emails → SMTP Settings; ex.: Brevo ou Resend, com
+plano grátis). Com SMTP dá para editar o modelo **Reset Password** e incluir também o código
+`{{ .Token }}`: a tela tem a opção **Recebi um código** para digitar o código em vez de usar o
+link.
 
 ## Administração da casa
 
@@ -113,6 +178,13 @@ Testes em `test/acertos_test.dart` (com os gastos de exemplo: 3 transferências 
   o mesmo mês não duplicam. Lógica em `lib/data/recorrentes.dart`, testes em
   `test/recorrentes_test.dart`.
 
+## Busca de gastos
+
+Aba Gastos → lupa: procura em **todos os meses** pela descrição, categoria, quem pagou ou valor
+(`120`, `1.500`, `189,90`). Ignora maiúsculas e acentos e exige todas as palavras
+(`mercado bia` = mercado que a Bia pagou). Funciona junto com os filtros de categoria e mostra o
+total encontrado. Regras em `lib/data/busca.dart`, testes em `test/busca_test.dart`.
+
 ## Tarefas da casa
 
 Aba **Tarefas** (`screens/tarefas_screen.dart`) e **Nova tarefa** (`screens/nova_tarefa_screen.dart`):
@@ -147,6 +219,7 @@ Código em `lib/services/nota_scanner.dart`; testes em `test/nota_scanner_test.d
 |---|---|---|
 | Login | `screens/login_screen.dart` | `/` |
 | Cadastro | `screens/cadastro_screen.dart` | `/cadastro` |
+| Recuperar senha | `screens/recuperar_senha_screen.dart` | `/recuperar-senha` |
 | Início | `screens/inicio_screen.dart` | aba 0 de `/home` |
 | Gastos | `screens/gastos_screen.dart` | aba 1 de `/home` |
 | Novo gasto | `screens/novo_gasto_screen.dart` | `/novo-gasto` |
@@ -161,10 +234,13 @@ Código em `lib/services/nota_scanner.dart`; testes em `test/nota_scanner_test.d
 ## Navegação
 
 - Login → Entrar → (Sua casa) → Home · Login → Cadastre-se → Cadastro → (Sua casa) → Home
+- Login → Continuar com Google → (Sua casa) → Home
+- Login → Esqueci minha senha → link do e-mail abre o app → Criar senha nova → Home
 - Sua casa: criar casa (offline) ou entrar com código de convite (online)
 - Início → Moradores → Gerenciar (adicionar, editar, remover, código de convite)
 - Tocar num gasto → Editar gasto (salvar alterações ou excluir)
-- Home: barra inferior Início / Gastos / Sobre · Início → Ver todos → Gastos
+- Home: barra inferior Início / Gastos / Tarefas / Sobre · Início → Ver todos → Gastos
+- Gastos → lupa → busca em todos os meses
 - Botão + → Novo gasto → Salvar → volta e atualiza saldo e listas
 - Início → Ver acertos → Acertos (registrar pagamento)
 - Sobre → Sair da conta → Login

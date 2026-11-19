@@ -749,3 +749,15 @@ String diaPorExtenso(DateTime d) => '${d.day} de ${_meses[d.month - 1]}';
 
 String dataCurta(DateTime d) =>
     '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+
+/// Nome da pessoa a partir da conta (metadados do Supabase Auth): o do
+/// cadastro ("nome") ou, para quem entrou com Google, o nome da conta Google
+/// ("full_name"/"name"). Sem nenhum, usa o começo do e-mail.
+String nomeDaConta(Map<String, dynamic>? metadados, String? email) {
+  for (final chave in const ['nome', 'full_name', 'name']) {
+    final v = metadados?[chave];
+    if (v is String && v.trim().isNotEmpty) return v.trim();
+  }
+  final inicio = (email ?? '').split('@').first.trim();
+  return inicio.isEmpty ? 'Eu' : inicio;
+}

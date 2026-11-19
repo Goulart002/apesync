@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/app_data.dart';
+import '../data/busca.dart';
 import '../routes.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
@@ -17,8 +18,24 @@ class _GastosScreenState extends State<GastosScreen> {
   DateTime _mes = DateTime(DateTime.now().year, DateTime.now().month);
   Categoria? _filtro; // null = Todos
 
+  // Busca: com texto digitado, procura em todos os meses.
+  bool _buscando = false;
+  final _busca = TextEditingController();
+  String get _termo => _busca.text.trim();
+
+  @override
+  void dispose() {
+    _busca.dispose();
+    super.dispose();
+  }
+
   void _mudarMes(int delta) =>
       setState(() => _mes = DateTime(_mes.year, _mes.month + delta));
+
+  void _alternarBusca() => setState(() {
+        _buscando = !_buscando;
+        if (!_buscando) _busca.clear();
+      });
 
   @override
   Widget build(BuildContext context) {
@@ -26,10 +43,16 @@ class _GastosScreenState extends State<GastosScreen> {
     return ListenableBuilder(
       listenable: data,
       builder: (context, _) {
+        final pesquisando = _buscando && _termo.isNotEmpty;
         final doMes = data.gastosDoMes(_mes);
+        final base = pesquisando
+            ? BuscaGastos.filtrar(data.gastos, _termo,
+                (id) => '${data.nomeDe(id)} ${data.morador(id).nome}')
+            : doMes;
         final filtrados = _filtro == null
-            ? doMes
-            : doMes.where((g) => g.categoria == _filtro).toList();
+            ? base
+            : base.where((g) => g.categoria == _filtro).toList();
+        final anoAtual = DateTime.now().year;
 
         // Agrupa por dia (a lista já vem ordenada do mais recente).
         final grupos = <DateTime, List<Gasto>>{};
@@ -56,44 +79,72 @@ class _GastosScreenState extends State<GastosScreen> {
                 ),
                 const SizedBox(width: 4),
                 SquareIconButton(
-                  icon: Icons.search,
-                  onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Busca: próxima sprint')),
+                  icon: _buscando ? Icons.close : Icons.search,
+                  onTap: _alternarBusca,
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            if (_buscando) ...[
+              TextField(
+                controller: _busca,
+                autofocus: true,
+                textInputAction: TextInputAction.search,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  hintText: 'Descrição, categoria, quem pagou ou valor',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: _busca.text.isEmpty
+                      ? null
+                      : IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: () => setState(_busca.clear),
+                        ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // Seletor de mês (a busca procura em todos os meses)
+            if (!pesquisando) ...[
+              Row(
+                children: [
+                  SquareIconButton(
+                      icon: Icons.chevron_left, onTap: () => _mudarMes(-1)),
+                  Expanded(
+                    child: Text(nomeMes(_mes),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.w600)),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
+                  SquareIconButton(
+                      icon: Icons.chevron_right, onTap: () => _mudarMes(1)),
+                ],
+              ),
+              const SizedBox(height: 16),
+            ],
 
-            // Seletor de mês
-            Row(
-              children: [
-                SquareIconButton(
-                    icon: Icons.chevron_left, onTap: () => _mudarMes(-1)),
-                Expanded(
-                  child: Text(nomeMes(_mes),
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.w600)),
-                ),
-                SquareIconButton(
-                    icon: Icons.chevron_right, onTap: () => _mudarMes(1)),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // Resumo
+            // Resumo (do mês ou do que a busca encontrou)
             AppCard(
               padding: EdgeInsets.zero,
               child: IntrinsicHeight(
                 child: Row(
                   children: [
-                    _Resumo('Total da casa',
-                        formatarReais(data.totalCentavos(doMes))),
+                    _Resumo(
+                        pesquisando
+                            ? (filtrados.length == 1
+                                ? '1 gasto encontrado'
+                                : '${filtrados.length} gastos encontrados')
+                            : 'Total da casa',
+                        formatarReais(data
+                            .totalCentavos(pesquisando ? filtrados : doMes))),
                     const VerticalDivider(
                         width: 1, color: AppColors.border),
-                    _Resumo('Sua parte',
-                        formatarReais(data.minhaParteCentavos(doMes))),
+                    _Resumo(
+                        'Sua parte',
+                        formatarReais(data.minhaParteCentavos(
+                            pesquisando ? filtrados : doMes))),
                   ],
                 ),
               ),
@@ -109,7 +160,7 @@ class _GastosScreenState extends State<GastosScreen> {
                   _chip('Todos', null),
                   for (final c in CategoriaInfo.lancaveis) _chip(c.label, c),
                   // "Ajuste" só aparece se houver algum no mês.
-                  if (doMes.any((g) => g.categoria.ehAjuste))
+                  if (base.any((g) => g.categoria.ehAjuste))
                     _chip(Categoria.ajuste.label, Categoria.ajuste),
                 ],
               ),
@@ -117,26 +168,41 @@ class _GastosScreenState extends State<GastosScreen> {
 
             // Lista agrupada por dia
             if (grupos.isEmpty)
-              const Padding(
-                padding: EdgeInsets.only(top: 48),
+              Padding(
+                padding: const EdgeInsets.only(top: 48),
                 child: Column(
                   children: [
-                    Icon(Icons.receipt_long_outlined,
-                        size: 48, color: AppColors.hint),
-                    SizedBox(height: 12),
-                    Text('Nenhum gasto aqui',
-                        style: TextStyle(
+                    Icon(
+                        pesquisando
+                            ? Icons.search_off
+                            : Icons.receipt_long_outlined,
+                        size: 48,
+                        color: AppColors.hint),
+                    const SizedBox(height: 12),
+                    Text(
+                        pesquisando
+                            ? 'Nada encontrado para "$_termo"'
+                            : 'Nenhum gasto aqui',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
                             fontSize: 16, fontWeight: FontWeight.w600)),
-                    SizedBox(height: 4),
-                    Text('Toque no + para adicionar',
-                        style: TextStyle(color: AppColors.muted)),
+                    const SizedBox(height: 4),
+                    Text(
+                        pesquisando
+                            ? 'A busca olha todos os meses'
+                            : 'Toque no + para adicionar',
+                        style: const TextStyle(color: AppColors.muted)),
                   ],
                 ),
               ),
             for (final entry in grupos.entries) ...[
               Padding(
                 padding: const EdgeInsets.only(top: 20, bottom: 8),
-                child: Text(diaPorExtenso(entry.key).toUpperCase(),
+                child: Text(
+                    (entry.key.year == anoAtual
+                            ? diaPorExtenso(entry.key)
+                            : '${diaPorExtenso(entry.key)} de ${entry.key.year}')
+                        .toUpperCase(),
                     style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,

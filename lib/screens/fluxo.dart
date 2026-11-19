@@ -31,6 +31,41 @@ String mensagemErro(Object e) {
     if (m.contains('email not confirmed')) {
       return 'Confirme seu e-mail antes de entrar';
     }
+    // Recuperar senha
+    if (m.contains('link is invalid or has expired')) {
+      return 'O link venceu ou já foi usado. Peça outro e-mail.';
+    }
+    if (m.contains('code verifier')) {
+      return 'Abra o link no mesmo celular em que pediu a recuperação';
+    }
+    if (m.contains('token has expired') || m.contains('otp')) {
+      return 'Código errado ou vencido. Confira o e-mail ou peça outro.';
+    }
+    if (m.contains('only request this after')) {
+      return 'Espere um minuto antes de pedir outro código';
+    }
+    if (m.contains('rate limit')) {
+      return 'Muitos e-mails enviados. Espere alguns minutos e tente de novo.';
+    }
+    if (m.contains('different from the old password')) {
+      return 'A senha nova precisa ser diferente da antiga';
+    }
+    if (m.contains('password should be')) {
+      return 'Senha fraca: use 8 caracteres ou mais';
+    }
+    // Login com Google (configuração do Supabase)
+    if (m.contains('provider is not enabled') ||
+        m.contains('unsupported provider')) {
+      return 'O login com Google não está ativado no Supabase '
+          '(README → Login com Google)';
+    }
+    if (m.contains('audience')) {
+      return 'O ID do cliente Google do app não está no Supabase '
+          '(README → Login com Google)';
+    }
+    if (m.contains('nonce')) {
+      return 'O Google não confirmou o login. Tente de novo.';
+    }
     return e.message;
   }
   if (e is PostgrestException) {
