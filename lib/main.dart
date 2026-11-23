@@ -15,6 +15,7 @@ import 'screens/nova_tarefa_screen.dart';
 import 'screens/novo_gasto_screen.dart';
 import 'screens/recorrentes_screen.dart';
 import 'screens/recuperar_senha_screen.dart';
+import 'screens/sobre_screen.dart';
 import 'theme.dart';
 
 Future<void> main() async {
@@ -35,6 +36,9 @@ Future<void> main() async {
   var abrirSenhaNova = false;
   Supabase.instance.client.auth.onAuthStateChange.listen(
     (estado) {
+      // Cor do app escolhida em Ajustes (fica na conta; sem conta = padrão).
+      AppColors.usarPaleta(
+          estado.session?.user.userMetadata?['cor_app'] as String?);
       if (estado.event != AuthChangeEvent.passwordRecovery) return;
       final nav = navegador.currentState;
       if (nav == null) {
@@ -74,6 +78,14 @@ class ApeSyncApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Refaz o tema quando a cor do app muda (Ajustes → Cor do app).
+    return ValueListenableBuilder<Paleta>(
+      valueListenable: AppColors.paleta,
+      builder: (context, _, __) => _app(),
+    );
+  }
+
+  Widget _app() {
     return MaterialApp(
       title: 'ApeSync',
       debugShowCheckedModeBanner: false,
@@ -93,6 +105,7 @@ class ApeSyncApp extends StatelessWidget {
         Rotas.novaTarefa: (_) => const NovaTarefaScreen(),
         Rotas.recuperarSenha: (_) => const RecuperarSenhaScreen(),
         Rotas.senhaNova: (_) => const RecuperarSenhaScreen(senhaNova: true),
+        Rotas.sobre: (_) => const SobreScreen(),
       },
     );
   }

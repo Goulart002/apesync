@@ -65,7 +65,7 @@ extension CategoriaInfo on Categoria {
 }
 
 /// Cores dos avatares dos moradores (o banco guarda só o índice).
-const paletaMoradores = [
+List<Color> get paletaMoradores => [
   AppColors.primary,
   AppColors.pink,
   AppColors.blue,

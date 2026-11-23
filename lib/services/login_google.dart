@@ -85,6 +85,17 @@ class LoginGoogle {
     }
   }
 
+  /// Conta excluída: além de sair, revoga o acesso do app à conta Google.
+  static Future<void> desconectar() async {
+    if (!configurado) return;
+    try {
+      await _iniciar();
+      await GoogleSignIn.instance.disconnect();
+    } catch (_) {
+      // Não entrou com Google neste celular: nada a revogar.
+    }
+  }
+
   /// null = a pessoa só cancelou (não é erro).
   static AvisoApp? _traduzir(GoogleSignInException e) {
     final detalhe = e.description ?? '';

@@ -120,10 +120,16 @@ class LocalDb {
   ];
 
   /// Um arquivo por usuário, para contas diferentes não se misturarem.
+  static Future<String> _caminho(String usuarioId) async =>
+      p.join(await getDatabasesPath(), 'apesync_$usuarioId.db');
+
+  /// Apaga o arquivo inteiro do usuário (conta excluída).
+  static Future<void> excluir(String usuarioId) async =>
+      deleteDatabase(await _caminho(usuarioId));
+
   static Future<Database> abrir(String usuarioId) async {
-    final caminho = p.join(await getDatabasesPath(), 'apesync_$usuarioId.db');
     return openDatabase(
-      caminho,
+      await _caminho(usuarioId),
       version: 4,
       onCreate: (db, _) async {
         for (final sql in _schema) {

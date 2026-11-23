@@ -5,10 +5,10 @@ import '../routes.dart';
 import '../theme.dart';
 import 'gastos_screen.dart';
 import 'inicio_screen.dart';
-import 'sobre_screen.dart';
+import 'ajustes_screen.dart';
 import 'tarefas_screen.dart';
 
-/// Tela "casca" com a barra de navegação inferior (Início | Gastos | Sobre).
+/// Tela "casca" com a barra de navegação inferior (Início | Gastos | Tarefas | Ajustes).
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
 
@@ -69,7 +69,7 @@ class _HomeShellState extends State<HomeShell> {
                 onVerTodos: () => _irPara(1), onVerTarefas: () => _irPara(2)),
             const GastosScreen(),
             const TarefasScreen(),
-            const SobreScreen(),
+            const AjustesScreen(),
           ],
         ),
       ),
@@ -93,7 +93,7 @@ class _HomeShellState extends State<HomeShell> {
         child: NavigationBar(
           selectedIndex: _aba,
           onDestinationSelected: _irPara,
-          destinations: const [
+          destinations: [
             NavigationDestination(
                 icon: Icon(Icons.home_outlined),
                 selectedIcon: Icon(Icons.home, color: AppColors.primary),
@@ -108,9 +108,9 @@ class _HomeShellState extends State<HomeShell> {
                 selectedIcon: Icon(Icons.task_alt, color: AppColors.primary),
                 label: 'Tarefas'),
             NavigationDestination(
-                icon: Icon(Icons.info_outline),
-                selectedIcon: Icon(Icons.info, color: AppColors.primary),
-                label: 'Sobre'),
+                icon: Icon(Icons.settings_outlined),
+                selectedIcon: Icon(Icons.settings, color: AppColors.primary),
+                label: 'Ajustes'),
           ],
         ),
       ),

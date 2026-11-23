@@ -324,6 +324,80 @@ class AppData extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------------------
+  // Ajustes da conta
+  // ---------------------------------------------------------------------------
+
+  String get emailDaConta => _sb.auth.currentUser?.email ?? '';
+
+  /// false = entrou só com Google (ainda não tem senha no app).
+  bool get temSenha {
+    final provedores = _sb.auth.currentUser?.appMetadata['providers'];
+    return provedores is! List || provedores.contains('email');
+  }
+
+  /// Muda o nome na casa (offline-first) e na conta (quando houver internet).
+  Future<void> editarMeuNome(String nome) async {
+    final limpo = nome.trim();
+    if (limpo.isEmpty) throw const AvisoApp('Informe seu nome');
+    final eu = meuMorador;
+    if (eu != null) await editarNome(eu, limpo);
+    try {
+      await _sb.auth.updateUser(UserAttributes(data: {'nome': limpo}));
+    } catch (_) {
+      // Sem internet: o nome da casa já mudou; o da conta fica para depois.
+    }
+  }
+
+  /// Troca a senha. [atual] confere a senha de agora (null = quem entrou só
+  /// com Google está criando a primeira senha).
+  Future<void> trocarSenha({String? atual, required String nova}) async {
+    final email = emailDaConta;
+    if (atual != null) {
+      try {
+        await _sb.auth.signInWithPassword(email: email, password: atual);
+      } on AuthException catch (e) {
+        if (e.message.toLowerCase().contains('invalid login')) {
+          throw const AvisoApp('Senha atual incorreta');
+        }
+        rethrow;
+      }
+    }
+    await _sb.auth.updateUser(UserAttributes(password: nova));
+  }
+
+  /// Cor do app (vale em qualquer celular: fica na conta). O main.dart
+  /// aplica quando a conta é atualizada.
+  Future<void> salvarCorDoApp(String id) =>
+      _sb.auth.updateUser(UserAttributes(data: {'cor_app': id}));
+
+  /// Motivo para não poder excluir a conta agora (null = pode).
+  String? get motivoNaoPodeExcluirConta {
+    final eu = meuMorador;
+    if (eu == null) return null;
+    return permissoes.motivoNaoPodeExcluirConta(
+      meuSaldo: saldoDe(eu.id),
+      outrosComConta:
+          moradores.where((m) => m.temConta && m.id != eu.id).length,
+    );
+  }
+
+  /// Exclui a conta de vez (precisa de internet). O servidor apaga a casa se
+  /// a pessoa morava sozinha, ou a deixa como "Ex-morador" nas outras
+  /// (função excluir_minha_conta do schema.sql). Depois apaga tudo do celular.
+  Future<void> excluirConta() async {
+    final motivo = motivoNaoPodeExcluirConta;
+    if (motivo != null) throw AvisoApp(motivo);
+    if (meuMorador != null) {
+      await SyncService.instance.sincronizar(); // sobe o que for ficar na casa
+    }
+    await _sb.rpc('excluir_minha_conta');
+    final uid = _uid;
+    await LoginGoogle.desconectar(); // tira o acesso do app à conta Google
+    await sair();
+    if (uid != null) await LocalDb.excluir(uid);
+  }
+
+  // ---------------------------------------------------------------------------
   // Escrita local (CREATE / UPDATE / DELETE) — sempre offline-first
   // ---------------------------------------------------------------------------
 

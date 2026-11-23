@@ -1,4 +1,4 @@
-package com.example.apesync
+package br.com.apesync
 
 import io.flutter.embedding.android.FlutterActivity
 

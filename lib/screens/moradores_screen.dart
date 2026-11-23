@@ -315,7 +315,7 @@ class MoradoresScreen extends StatelessWidget {
                     const Text('Código de convite',
                         style: TextStyle(fontSize: 13, color: AppColors.muted)),
                     Text(casa.codigoConvite,
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontSize: 26,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 4,
@@ -325,7 +325,7 @@ class MoradoresScreen extends StatelessWidget {
               ),
               IconButton(
                 tooltip: 'Copiar código',
-                icon: const Icon(Icons.copy, color: AppColors.primary),
+                icon: Icon(Icons.copy, color: AppColors.primary),
                 onPressed: () {
                   Clipboard.setData(ClipboardData(text: casa.codigoConvite));
                   _aviso(context, 'Código copiado');
@@ -334,7 +334,7 @@ class MoradoresScreen extends StatelessWidget {
               IconButton(
                 tooltip: 'Compartilhar convite',
                 icon:
-                    const Icon(Icons.share_outlined, color: AppColors.primary),
+                    Icon(Icons.share_outlined, color: AppColors.primary),
                 onPressed: () => _compartilhar(context, casa),
               ),
             ],
@@ -450,7 +450,7 @@ class _SeloAdmin extends StatelessWidget {
         color: AppColors.primaryLight,
         borderRadius: BorderRadius.circular(6),
       ),
-      child: const Text('Admin',
+      child: Text('Admin',
           style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w700,

@@ -30,7 +30,32 @@ no `android/app/build.gradle.kts` (o R8 quebrava o ML Kit no release). Se o Grad
 Se o celular recusar instalar ("pacote conflita"), desinstale a versão antiga — APKs gerados em PCs
 diferentes têm assinaturas de debug diferentes.
 
+O identificador do app é **`br.com.apesync`** (`applicationId` no `android/app/build.gradle.kts`;
+definitivo, não muda depois de publicar na loja). Até o Bloco 6 era `com.example.apesync`, que a
+Google Play não aceita: se ainda tiver o app antigo instalado, pode desinstalar (os dados voltam do
+servidor no app novo).
+
 Testes: `flutter test`
+
+## Ajustes
+
+Aba **Ajustes** (`screens/ajustes_screen.dart`, no lugar da antiga aba Sobre):
+- **Perfil:** trocar o nome (muda na casa e na conta).
+- **Trocar senha** (pede a senha atual) ou **Criar senha**, para quem entrou só com Google.
+- **Cor do app:** 6 opções (`AppColors.paletas` em `lib/theme.dart`). A escolha fica nos metadados
+  da conta (`cor_app`), então vale em qualquer celular. `AppColors.primary`, `primaryLight` e
+  `primaryMuted` seguem a cor escolhida: **não use `const`** em widgets que usam essas três cores.
+- **Sobre o ApêSync**, **Sair da conta** e **Excluir conta**.
+
+### Excluir conta
+
+Exigência da App Store e da Google Play. Pede para digitar `EXCLUIR` e precisa de internet:
+- Admin que mora **sozinho** (nenhum outro morador com conta): a casa é apagada inteira.
+- Admin com outros moradores: precisa **transferir a administração** antes.
+- Morador: precisa estar com o **saldo zerado** (mesma regra de sair da casa). Nos gastos antigos
+  ele vira **"Ex-morador"** (sem conta, sem PIX), para as contas de quem fica continuarem certas.
+- O servidor faz tudo na função `excluir_minha_conta()` do `schema.sql` (inclusive apagar o
+  login em `auth.users`) e o app apaga o banco local e revoga o acesso do Google.
 
 ## Banco de dados e sincronização offline
 
@@ -68,7 +93,7 @@ contas do Android, sem navegador. O Google devolve um ID token e o Supabase troc
 3. **Clientes → Criar cliente → Aplicativo da Web** (ex.: "ApeSync Supabase"). Em *URIs de
    redirecionamento autorizados* coloque `https://SEU-PROJETO.supabase.co/auth/v1/callback`.
    Guarde o **ID do cliente** e a **chave secreta**.
-4. **Clientes → Criar cliente → Android**: pacote `com.example.apesync` e o **SHA-1** do PC que
+4. **Clientes → Criar cliente → Android**: pacote `br.com.apesync` e o **SHA-1** do PC que
    gera o APK (comando abaixo). **Cada desenvolvedor cria um cliente Android com o SHA-1 do
    próprio PC** (APKs de debug de PCs diferentes têm assinaturas diferentes).
 5. **Supabase → Authentication → Sign In / Providers → Google**: ativar, colar o ID do cliente
@@ -223,7 +248,8 @@ Código em `lib/services/nota_scanner.dart`; testes em `test/nota_scanner_test.d
 | Início | `screens/inicio_screen.dart` | aba 0 de `/home` |
 | Gastos | `screens/gastos_screen.dart` | aba 1 de `/home` |
 | Novo gasto | `screens/novo_gasto_screen.dart` | `/novo-gasto` |
-| Sobre o app | `screens/sobre_screen.dart` | aba 3 de `/home` |
+| Ajustes | `screens/ajustes_screen.dart` | aba 3 de `/home` |
+| Sobre o app | `screens/sobre_screen.dart` | `/sobre` |
 | Acertos | `screens/acertos_screen.dart` | `/acertos` |
 | Sua casa | `screens/casa_screen.dart` | `/casa` |
 | Moradores | `screens/moradores_screen.dart` | `/moradores` |
@@ -239,10 +265,10 @@ Código em `lib/services/nota_scanner.dart`; testes em `test/nota_scanner_test.d
 - Sua casa: criar casa (offline) ou entrar com código de convite (online)
 - Início → Moradores → Gerenciar (adicionar, editar, remover, código de convite)
 - Tocar num gasto → Editar gasto (salvar alterações ou excluir)
-- Home: barra inferior Início / Gastos / Tarefas / Sobre · Início → Ver todos → Gastos
+- Home: barra inferior Início / Gastos / Tarefas / Ajustes · Início → Ver todos → Gastos
 - Gastos → lupa → busca em todos os meses
 - Botão + → Novo gasto → Salvar → volta e atualiza saldo e listas
 - Início → Ver acertos → Acertos (registrar pagamento)
-- Sobre → Sair da conta → Login
+- Ajustes → Sair da conta (ou Excluir conta) → Login · Ajustes → Sobre o ApêSync
 
 Dados ficam no SQLite do celular e no Supabase; ver seção "Banco de dados e sincronização offline".

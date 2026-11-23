@@ -111,7 +111,7 @@ class _NovoGastoScreenState extends State<NovoGastoScreen> {
                 leading: Avatar(m),
                 title: Text(m.nome),
                 trailing: m.id == _pagoPor
-                    ? const Icon(Icons.check, color: AppColors.primary)
+                    ? Icon(Icons.check, color: AppColors.primary)
                     : null,
                 onTap: () => Navigator.pop(context, m.id),
               ),
@@ -417,7 +417,7 @@ class _NovoGastoScreenState extends State<NovoGastoScreen> {
                       // Scanner de nota fiscal
                       OutlinedButton.icon(
                         onPressed: _escanearNota,
-                        icon: const Icon(Icons.document_scanner_outlined,
+                        icon: Icon(Icons.document_scanner_outlined,
                             color: AppColors.primary),
                         label: const Text('Escanear nota fiscal'),
                         style: OutlinedButton.styleFrom(
@@ -557,7 +557,7 @@ class _NovoGastoScreenState extends State<NovoGastoScreen> {
                               contentPadding: EdgeInsets.zero,
                               value: _repetir,
                               onChanged: (v) => setState(() => _repetir = v),
-                              secondary: const Icon(Icons.repeat,
+                              secondary: Icon(Icons.repeat,
                                   color: AppColors.primary),
                               title: const Text('Repetir todo mês',
                                   style: TextStyle(
@@ -601,7 +601,7 @@ class _NovoGastoScreenState extends State<NovoGastoScreen> {
                               Padding(
                                 padding: const EdgeInsets.only(bottom: 6),
                                 child: Text('${formatarReais(_parteCada)} cada',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                         fontSize: 13,
                                         fontWeight: FontWeight.w600,
                                         color: AppColors.primary)),

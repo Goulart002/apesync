@@ -101,7 +101,7 @@ class AcertosScreen extends StatelessWidget {
                     padding: const EdgeInsets.only(bottom: 10),
                     child: Row(
                       children: [
-                        const Icon(Icons.auto_awesome,
+                        Icon(Icons.auto_awesome,
                             size: 18, color: AppColors.primary),
                         const SizedBox(width: 6),
                         Expanded(
@@ -110,7 +110,7 @@ class AcertosScreen extends StatelessWidget {
                                 ? 'Dívidas simplificadas: ${transferencias.length} '
                                     'transferência(s) em vez de $semSimplificar'
                                 : 'Menor número de transferências possível',
-                            style: const TextStyle(
+                            style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w500,
                                 color: AppColors.primary),

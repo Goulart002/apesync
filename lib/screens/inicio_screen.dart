@@ -100,7 +100,7 @@ class InicioScreen extends StatelessWidget {
                   InkWell(
                     borderRadius: BorderRadius.circular(24),
                     onTap: () => Navigator.pushNamed(context, Rotas.moradores),
-                    child: const Column(
+                    child: Column(
                       children: [
                         CircleAvatar(
                           radius: 24,
@@ -167,14 +167,14 @@ class _SaldoCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Text('Seu saldo na casa',
                     style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
                         color: AppColors.primaryMuted)),
               ),
-              const Icon(Icons.chevron_right, color: AppColors.primaryMuted),
+              Icon(Icons.chevron_right, color: AppColors.primaryMuted),
             ],
           ),
           const SizedBox(height: 6),
@@ -185,7 +185,7 @@ class _SaldoCard extends StatelessWidget {
                   color: Colors.white)),
           const SizedBox(height: 4),
           Text(legenda,
-              style: const TextStyle(
+              style: TextStyle(
                   fontSize: 14, color: AppColors.primaryMuted)),
           const SizedBox(height: 14),
           Material(
@@ -194,7 +194,7 @@ class _SaldoCard extends StatelessWidget {
             child: InkWell(
               borderRadius: BorderRadius.circular(10),
               onTap: () => Navigator.pushNamed(context, Rotas.acertos),
-              child: const Padding(
+              child: Padding(
                 padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 child: Text('Ver acertos',
                     style: TextStyle(

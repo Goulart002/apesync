@@ -82,6 +82,21 @@ void main() {
     expect(_comoBia.motivoNaoPodeSair(meuSaldo: 0, outrosComConta: 1), isNull);
   });
 
+  test('Excluir conta: admin sozinho pode (a casa vai junto)', () {
+    expect(
+        _comoAna.motivoNaoPodeExcluirConta(meuSaldo: 0, outrosComConta: 0),
+        isNull);
+    expect(
+        _comoAna.motivoNaoPodeExcluirConta(meuSaldo: 0, outrosComConta: 1),
+        contains('Transfira'));
+    expect(
+        _comoBia.motivoNaoPodeExcluirConta(meuSaldo: -1000, outrosComConta: 1),
+        contains('ainda deve'));
+    expect(
+        _comoBia.motivoNaoPodeExcluirConta(meuSaldo: 0, outrosComConta: 1),
+        isNull);
+  });
+
   test('Tornar administrador: só admin, para outro morador com conta', () {
     expect(_comoAna.podeTornarAdmin(_bia), isTrue);
     expect(_comoAna.podeTornarAdmin(_semConta), isFalse);

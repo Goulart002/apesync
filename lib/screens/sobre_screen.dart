@@ -1,19 +1,29 @@
 import 'package:flutter/material.dart';
 
-import '../data/app_data.dart';
-import '../routes.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 
-/// Tela Sobre o App.
+/// Sobre o app (aberta em Ajustes → Sobre o ApêSync).
 class SobreScreen extends StatelessWidget {
   const SobreScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(child: _conteudo(context)),
+    );
+  }
+
+  Widget _conteudo(BuildContext context) {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
       children: [
+        Align(
+          alignment: Alignment.centerLeft,
+          child: SquareIconButton(
+              icon: Icons.arrow_back, onTap: () => Navigator.pop(context)),
+        ),
+        const SizedBox(height: 20),
         const Text('Sobre o app',
             style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700)),
         const SizedBox(height: 20),
@@ -55,7 +65,7 @@ class SobreScreen extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        const AppCard(
+        AppCard(
           padding: EdgeInsets.symmetric(horizontal: 16, vertical: 6),
           child: Column(
             children: [
@@ -69,19 +79,20 @@ class SobreScreen extends StatelessWidget {
               Divider(height: 1, color: AppColors.divider),
               _Recurso(Icons.task_alt, AppColors.blue, AppColors.blueLight,
                   'Tarefas da casa', 'Rodízio de tarefas e placar do mês'),
+              const Divider(height: 1, color: AppColors.divider),
+              const _Recurso(Icons.pix, AppColors.purple, AppColors.purpleLight,
+                  'PIX nos acertos', 'Pagar e cobrar com QR code'),
+              const Divider(height: 1, color: AppColors.divider),
+              const _Recurso(Icons.cloud_sync_outlined, AppColors.amber,
+                  AppColors.amberLight, 'Funciona offline',
+                  'Sincroniza quando a internet voltar'),
             ],
           ),
         ),
         const SizedBox(height: 16),
-        OutlinedButton.icon(
-          onPressed: () => _sair(context),
-          icon: const Icon(Icons.logout, size: 20),
-          label: const Text('Sair da conta'),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: AppColors.negative,
-            side: const BorderSide(color: Color(0xFFFECACA)),
-          ),
-        ),
+        const Text('Projeto Integrado · PUC Minas',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: AppColors.muted)),
       ],
     );
   }
@@ -127,34 +138,4 @@ class _Recurso extends StatelessWidget {
       ),
     );
   }
-}
-
-Future<void> _sair(BuildContext context) async {
-  final data = AppData.instance;
-  final pendentes = await data.contarPendentes();
-  if (!context.mounted) return;
-  if (pendentes > 0) {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Sair da conta'),
-        content: Text('Há $pendentes alteração(ões) ainda não sincronizada(s). '
-            'Elas ficam guardadas neste celular e sobem quando você entrar de novo. Sair mesmo assim?'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancelar')),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
-            child: const Text('Sair'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-  }
-  await data.sair();
-  if (!context.mounted) return;
-  Navigator.of(context).pushNamedAndRemoveUntil(Rotas.login, (_) => false);
 }

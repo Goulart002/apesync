@@ -188,6 +188,13 @@ drop trigger if exists trg_casa_admin on public.casas;
 create trigger trg_casa_admin before insert on public.casas
   for each row execute function public.casa_admin_padrao();
 
+-- true só dentro de excluir_minha_conta() (seção 5): lá o servidor precisa
+-- mexer em campos que as proteções abaixo normalmente travam.
+create or replace function public.excluindo_conta()
+returns boolean language sql stable as $$
+  select coalesce(current_setting('apesync.excluindo_conta', true), '') = 'on';
+$$;
+
 -- Morador: não pode trocar de casa nem de dono (usuario_id), só a própria
 -- pessoa muda a chave PIX dela (senão alguém poderia trocar pela sua e
 -- desviar pagamentos), e o administrador não pode sair sem antes
@@ -195,6 +202,7 @@ create trigger trg_casa_admin before insert on public.casas
 create or replace function public.proteger_morador()
 returns trigger language plpgsql as $$
 begin
+  if public.excluindo_conta() then return new; end if;
   new.casa_id := old.casa_id;
   new.usuario_id := old.usuario_id;
   if new.chave_pix is distinct from old.chave_pix
@@ -217,6 +225,7 @@ create trigger trg_proteger_morador before update on public.moradores
 create or replace function public.proteger_gasto()
 returns trigger language plpgsql as $$
 begin
+  if public.excluindo_conta() then return new; end if;
   new.casa_id := old.casa_id;
   new.criado_por := old.criado_por;
   return new;
@@ -253,6 +262,7 @@ create trigger trg_proteger_pagamento before update on public.pagamentos
 create or replace function public.mais_recente_vence()
 returns trigger language plpgsql as $$
 begin
+  if public.excluindo_conta() then return new; end if;
   if new.updated_at > now() + interval '5 minutes' then
     new.updated_at := now();
   end if;
@@ -353,6 +363,7 @@ create trigger trg_validar_moradores before insert or update on public.tarefas_f
 create or replace function public.proteger_tarefa()
 returns trigger language plpgsql as $$
 begin
+  if public.excluindo_conta() then return new; end if;
   new.casa_id := old.casa_id;
   new.criado_por := old.criado_por;
   if old.criado_por is distinct from auth.uid() and not public.eh_admin(old.casa_id) then
@@ -593,6 +604,58 @@ begin
    where id = p_casa;
 end $$;
 
+-- ---------------------------------------------------------------------
+-- 5b) Excluir a própria conta (Ajustes → Excluir conta; exigência da App
+--     Store e da Google Play). Precisa de internet.
+--   - Casa que a pessoa administra: só se ela for a única com conta; aí a
+--     casa inteira é apagada. Senão, transfira a administração antes.
+--   - Nas outras casas ela vira "Ex-morador" (sem conta, sem PIX): os gastos
+--     antigos continuam fechando para quem fica. O app confere antes que o
+--     saldo está zerado (mesma regra de sair da casa).
+--   - Por fim apaga o usuário do login (auth.users).
+-- ---------------------------------------------------------------------
+create or replace function public.excluir_minha_conta()
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_uid uuid := auth.uid();
+  v_casa uuid;
+begin
+  if v_uid is null then
+    raise exception 'Entre na conta para excluí-la';
+  end if;
+  perform set_config('apesync.excluindo_conta', 'on', true);  -- só nesta transação
+
+  for v_casa in select id from public.casas where admin_id = v_uid loop
+    if exists (select 1 from public.moradores
+                where casa_id = v_casa and not deleted
+                  and usuario_id is not null and usuario_id <> v_uid) then
+      raise exception 'Transfira a administração da casa antes de excluir a conta';
+    end if;
+    delete from public.tarefas_feitas where casa_id = v_casa;
+    delete from public.tarefas        where casa_id = v_casa;
+    delete from public.pagamentos     where casa_id = v_casa;
+    delete from public.gastos         where casa_id = v_casa;
+    delete from public.recorrencias   where casa_id = v_casa;
+    delete from public.moradores      where casa_id = v_casa;
+    delete from public.casas          where id = v_casa;
+  end loop;
+
+  update public.moradores
+     set usuario_id = null, nome = 'Ex-morador', chave_pix = null,
+         deleted = true, updated_at = now()
+   where usuario_id = v_uid;
+  update public.casas
+     set criado_por = admin_id, updated_at = now()
+   where criado_por = v_uid and admin_id is not null;
+  update public.gastos       set criado_por = null, updated_at = now() where criado_por = v_uid;
+  update public.recorrencias set criado_por = null, updated_at = now() where criado_por = v_uid;
+  update public.tarefas      set criado_por = null, updated_at = now() where criado_por = v_uid;
+
+  delete from auth.users where id = v_uid;
+end $$;
+
+revoke all on function public.excluir_minha_conta() from public, anon;
+grant execute on function public.excluir_minha_conta() to authenticated;
 grant execute on function public.entrar_na_casa(text, text) to authenticated;
 grant execute on function public.transferir_admin(uuid, uuid) to authenticated;
 grant execute on function public.eh_membro(uuid) to authenticated;

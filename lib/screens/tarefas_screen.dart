@@ -113,7 +113,7 @@ class _TarefasScreenState extends State<TarefasScreen> {
                                 ranking[i].value == 1
                                     ? '1 tarefa'
                                     : '${ranking[i].value} tarefas',
-                                style: const TextStyle(
+                                style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w600,
                                     color: AppColors.primary)),

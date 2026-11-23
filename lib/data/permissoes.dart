@@ -84,6 +84,24 @@ class Permissoes {
     return null;
   }
 
+  /// null = pode excluir a conta. Admin sozinho pode (a casa é apagada
+  /// junto); admin com outros moradores precisa transferir antes. Quem fica
+  /// na casa como "Ex-morador" precisa estar com o saldo zerado.
+  String? motivoNaoPodeExcluirConta(
+      {required int meuSaldo, required int outrosComConta}) {
+    if (souAdmin) {
+      return outrosComConta == 0
+          ? null
+          : 'Você é o administrador. Transfira a administração para outro '
+              'morador antes de excluir a conta.';
+    }
+    if (meuSaldo != 0) {
+      return 'Você ${descreverSaldo(meuSaldo)}. Acerte as contas antes de '
+          'excluir a conta.';
+    }
+    return null;
+  }
+
   static String descreverSaldo(int saldo) => saldo < 0
       ? 'ainda deve ${formatarReais(-saldo)}'
       : 'ainda tem ${formatarReais(saldo)} a receber';

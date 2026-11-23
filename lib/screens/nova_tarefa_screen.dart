@@ -353,7 +353,7 @@ class _NovaTarefaScreenState extends State<NovaTarefaScreen> {
                                 _noRodizio = moradores.map((m) => m.id).toSet();
                               }
                             }),
-                            secondary: const Icon(Icons.autorenew,
+                            secondary: Icon(Icons.autorenew,
                                 color: AppColors.primary),
                             title: const Text('Revezar entre moradores',
                                 style: TextStyle(

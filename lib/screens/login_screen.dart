@@ -189,7 +189,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             GestureDetector(
                               onTap: () =>
                                   Navigator.pushNamed(context, Rotas.cadastro),
-                              child: const Text('Cadastre-se',
+                              child: Text('Cadastre-se',
                                   style: TextStyle(
                                       color: AppColors.primary,
                                       fontWeight: FontWeight.w600)),

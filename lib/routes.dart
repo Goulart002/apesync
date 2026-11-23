@@ -2,13 +2,13 @@
 ///   Login ──► Cadastro ──► (Sua casa) ──► Home
 ///   Login (e-mail ou Google) ──► (Sua casa) ──► Home
 ///   Login ──► Recuperar senha ──(link do e-mail abre o app)──► Senha nova ──► Home
-///   Home (abas: Início | Gastos | Tarefas | Sobre)
+///   Home (abas: Início | Gastos | Tarefas | Ajustes)
 ///     ├─► Nova tarefa / Editar tarefa (argumento: Tarefa)
 ///     ├─► Novo gasto / Editar gasto (argumento: Gasto) ──► Home
 ///     ├─► Acertos
 ///     ├─► Gastos fixos (aba Gastos)
 ///     └─► Moradores
-///   Sobre ──(Sair da conta)──► Login
+///   Ajustes ──(Sair da conta / Excluir conta)──► Login · Ajustes ──► Sobre
 class Rotas {
   static const login = '/';
   static const cadastro = '/cadastro';
@@ -23,4 +23,7 @@ class Rotas {
 
   /// Aberta pelo link do e-mail de recuperação (já logado).
   static const senhaNova = '/senha-nova';
+
+  /// Ajustes → Sobre o ApêSync.
+  static const sobre = '/sobre';
 }

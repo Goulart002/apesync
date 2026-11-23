@@ -166,7 +166,7 @@ class _CadastroScreenState extends State<CadastroScreen> {
                         style: TextStyle(color: AppColors.muted)),
                     GestureDetector(
                       onTap: () => Navigator.pop(context),
-                      child: const Text('Entrar',
+                      child: Text('Entrar',
                           style: TextStyle(
                               color: AppColors.primary,
                               fontWeight: FontWeight.w600)),

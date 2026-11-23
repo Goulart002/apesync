@@ -116,7 +116,7 @@ class SectionHeader extends StatelessWidget {
             GestureDetector(
               onTap: onAction,
               child: Text(action!,
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                       color: AppColors.primary)),
